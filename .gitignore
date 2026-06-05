@@ -1,0 +1,27 @@
+# 运行时
+.runtime.pid
+data/
+uploads/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.vite/
+node_modules/
+
+# 环境变量（如有本地覆盖）
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log

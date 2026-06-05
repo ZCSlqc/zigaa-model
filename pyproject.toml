@@ -1,0 +1,21 @@
+[project]
+name = "zigaa-backend"
+version = "0.1.0"
+description = "Zigaa 大模型云平台后端 API"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "pyjwt>=2.8",
+    "bcrypt>=4.0",
+    "python-multipart>=0.0.28",
+    "pillow>=10",
+    "opencv-python-headless>=4.8",
+    "pymysql>=1.1",
+    "paramiko>=3.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["core*", "api*", "services*"]
