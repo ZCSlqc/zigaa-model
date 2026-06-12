@@ -1,6 +1,6 @@
 import client from './client'
 
-const LONG_TIMEOUT = 120000
+const LONG_TIMEOUT = 1200000
 
 // 磁盘空间检查
 export function checkDiskSpace(modelId: string, type: 'good' | 'defect' | 'test' | 'template') {

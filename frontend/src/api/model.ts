@@ -21,7 +21,7 @@ export function deleteModel(modelId: string) {
 }
 
 export function trainModel(modelId: string) {
-  return client.post(`/models/${modelId}/train`, {}, { timeout: 300000 })
+  return client.post(`/models/${modelId}/train`, {}, { timeout: 1200000 })
 }
 
 export function stopTraining(modelId: string) {
@@ -41,7 +41,7 @@ export function pollStatus(modelId: string) {
 }
 
 export function runTest(modelId: string) {
-  return client.post(`/models/${modelId}/run-test`, {}, { timeout: 300000 })
+  return client.post(`/models/${modelId}/run-test`, {}, { timeout: 1200000 })
 }
 
 export function stopTest(modelId: string) {
@@ -50,7 +50,7 @@ export function stopTest(modelId: string) {
 
 // 模型分片下载
 export function downloadModelInit(modelId: string) {
-  return client.post(`/models/${modelId}/model/download-init`, {}, { timeout: 120000 })
+  return client.post(`/models/${modelId}/model/download-init`, {}, { timeout: 1200000 })
 }
 
 export function downloadModelChunk(modelId: string, sessionId: string, chunkIndex: number, signal?: AbortSignal) {

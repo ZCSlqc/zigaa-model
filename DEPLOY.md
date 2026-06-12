@@ -194,6 +194,7 @@ VITE_DRAW_MIN_SCREEN_DIST=8     # 拖拽绘制最小屏幕像素间距（取 max
 | `CORS_HOST` | 允许的前端访问 IP，留空则只允许 localhost/127.0.0.1 | 空 | 远程访问需填服务器 IP |
 | `CORS_PORT` | 前端端口 | `3111` | 前端端口变更时同步修改 |
 | `VITE_HIT_RADIUS` | 顶点检测半径（屏幕像素） | `4` | 调整鼠标靠近顶点时触发的灵敏度 |
+| `VITE_HIT_RADIUS` | 顶点检测半径（屏幕像素） | `4` | 调整鼠标靠近顶点时触发的灵敏度 |
 | `VITE_EDGE_HIT_RADIUS` | 边插入检测半径（屏幕像素） | `3` | 调整鼠标靠近标注边时触发插入的灵敏度 |
 | `VITE_DRAW_MIN_IMAGE_DIST` | 拖拽绘制时两个点之间的最小图片像素间距 | `1.5` | 取 `max(图片间距, 屏幕像素/scale)`，防止缩小后点过度密集 |
 | `VITE_DRAW_MIN_SCREEN_DIST` | 拖拽绘制时两个点之间的最小屏幕像素间距 | `8` | 取 `max(图片间距, 屏幕像素/scale)`，防止缩小后点过度密集 |
@@ -458,6 +459,16 @@ cat log/backend.log
 # 1. Python 依赖未安装 → .venv/bin/pip list 检查
 # 2. .env 中 JWT_SECRET 未设置 → 必须非空
 # 3. 端口被占用 → lsof -i :8111
+```
+
+### 10.6 下载/训练超时
+
+下载大型 ZIP 或训练时如果报超时，属于正常现象——超时已设为 20 分钟。如果仍觉得不够，可以修改前端 API 配置：
+
+```bash
+# 修改超时（20 分钟 = 1200000 毫秒）
+# frontend/src/api/model.ts  → trainModel / runTest / downloadModelInit 的 timeout
+# frontend/src/api/resource.ts → LONG_TIMEOUT 的值
 ```
 
 ---

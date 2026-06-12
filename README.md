@@ -124,9 +124,9 @@ DB_PASSWORD=zigaa123
 DB_NAME=zigaa_platform
 
 # ===== 后端：文件存储 =====
-UPLOAD_DIR=../uploads
-UPLOAD_TMP_DIR=/data/tmp
-TRAINING_DIR=/data/zigaa
+UPLOAD_DIR=/media/hd_16t/cloud_platform/uploads
+UPLOAD_TMP_DIR=/media/hd_16t/cloud_platform/tmp
+TRAINING_DIR=/media/hd_16t/cloud_platform/training
 CLEANUP_STALE_HOURS=48
 
 # ===== 后端：CORS 跨域 =====
@@ -234,6 +234,17 @@ tail -f log/frontend.log    # 查看前端日志
 | `uv: command not found` | `source ~/.bashrc` 使环境变量生效 |
 | 前端能访问但 API 404 | 检查后端是否启动 (`curl http://localhost:8111/docs`) |
 | 后端启动失败 | 检查 `log/backend.log`，确认 `.env` 中 `JWT_SECRET` 非空 |
+| 下载/训练超时 | 后端打包 ZIP 或训练耗时长属正常，超时已设为 20 分钟，耐心等待 |
+
+## ⏱ API 超时配置
+
+| 操作 | 超时 |
+|------|------|
+| 普通请求 / 标注 / 轮询 | 30 秒 |
+| ZIP 分片上传 / 分片下载 / 模型下载 | 20 分钟 |
+| 训练 / 测试 | 20 分钟 |
+
+> 超时时间在前端 API 层配置，修改需改 `frontend/src/api/model.ts` 和 `frontend/src/api/resource.ts` 中的 `timeout` 值。
 
 ## 📝 License
 
