@@ -7,6 +7,9 @@
         <span v-if="hasErrorCount > 0" class="count-err">{{ hasErrorCount }} 张</span>
       </span>
     </div>
+    <div v-if="currentImageRelPath" class="current-path" :title="currentImageRelPath">
+      文件路径：{{ currentImageRelPath }}
+    </div>
     <div class="panel-actions">
       <span class="action-link" @click="expandAll">全部展开</span>
       <span class="action-sep">/</span>
@@ -14,7 +17,7 @@
     </div>
     <div v-if="store.loading" class="loading-text">加载中...</div>
     <div v-else-if="treeFlat.length === 0" class="empty-text">暂无图片</div>
-    <div v-else class="image-list">
+    <div v-else class="image-list" ref="imageListRef">
       <TreeItem
         v-for="node in treeFlat"
         :key="node.name"
@@ -30,12 +33,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { useAnnotationStore, type TreeNode } from '../../stores/annotation'
 import TreeItem from './TreeItem.vue'
 
 const store = useAnnotationStore()
+const imageListRef = ref<HTMLElement | null>(null)
+
+function scrollIntoSelected() {
+  nextTick(() => {
+    const el = imageListRef.value?.querySelector('.selected')
+    if (el && 'scrollIntoView' in el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  })
+}
 
 const resourceLabel = computed(() => {
   const labels: Record<string, string> = { good: '良品', defect: '缺陷', test: '测试', template: '模板' }
@@ -43,6 +56,12 @@ const resourceLabel = computed(() => {
 })
 
 const treeFlat = computed(() => store.tree)
+
+const currentImageRelPath = computed(() => {
+  const img = store.currentImage
+  if (!img) return ''
+  return img.rel_path
+})
 const hasAnnotationCount = computed(() => store.allImages.filter(img => img.has_annotation).length)
 const hasErrorCount = computed(() => store.allImages.filter(img => !img.has_annotation).length)
 const expandedFolders = ref(new Set<string>())
@@ -53,6 +72,7 @@ function toggleFolder(path: string) {
   } else {
     expandedFolders.value.add(path)
   }
+  scrollIntoSelected()
 }
 
 function expandAll() {
@@ -65,6 +85,7 @@ function expandAll() {
     }
   }
   walk(store.tree)
+  scrollIntoSelected()
 }
 
 function collapseAll() {
@@ -113,6 +134,15 @@ const folderCb = (removedPaths: string[]) => {
   }
 }
 const offFolderRemoved = store.onFolderRemoved(folderCb)
+
+// 高亮元素滚动到可视区域（切换图片时触发）
+watch(
+  () => store.currentImage?.path,
+  (newPath, oldPath) => {
+    if (!newPath || newPath === oldPath) return
+    scrollIntoSelected()
+  },
+)
 
 onUnmounted(() => {
   offFolderRemoved()
@@ -168,6 +198,19 @@ onUnmounted(() => {
 
 .action-link:hover {
   opacity: 0.75;
+}
+
+.current-path {
+  font-size: 11px;
+  color: var(--color-primary);
+  padding: 0 var(--spacing-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+  white-space: normal;
 }
 
 .action-sep {
