@@ -15,6 +15,9 @@
         <ImagePanel />
 
         <div class="canvas-container" ref="containerRef" @contextmenu.prevent>
+          <div v-if="store.currentImage" class="canvas-title">
+            图片路径：{{ store.currentImage.rel_path }}&ensp;|&ensp;通道数：{{ store.currentImage.channels || 3 }}（{{ store.channelLabel(store.currentImage.channels) }}）&ensp;|&ensp;分辨率：{{ imgW }}×{{ imgH }}
+          </div>
           <v-stage
             v-if="imageReady"
             ref="stageRef"
@@ -341,6 +344,22 @@ onUnmounted(() => {
   touch-action: none;
   user-select: none;
   -webkit-user-drag: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-title {
+  flex-shrink: 0;
+  padding: 6px var(--spacing-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-light);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-empty {

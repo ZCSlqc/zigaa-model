@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getResourceTree, getAnnotation, saveAnnotation, deleteImage, deleteFolder } from '../api/resource'
+import { getResourceTree, getAnnotation, saveAnnotation, deleteImage, deleteFolder, getImageInfo } from '../api/resource'
 import { getModel } from '../api/model'
 import { ElMessage } from 'element-plus'
 
@@ -25,6 +25,7 @@ export interface TreeFile {
   original_rel_path: string
   compress_path?: string
   preview_path?: string
+  channels?: number // 1=灰度, 3=彩色
   error?: string
   error_level?: number // 1-5 red (critical), 6-9 yellow (warning), 0 = OK
 }
@@ -143,8 +144,18 @@ export const useAnnotationStore = defineStore('annotation', () => {
   }
 
   async function selectImage(img: TreeFile) {
-    currentImage.value = img
+    // Fetch image info (channels) concurrently with annotation load
+    const imageInfo = getImageInfo(modelId.value, resourceType.value, img.original_rel_path).catch(() => null)
+    currentImage.value = { ...img }
     await loadAnnotation(img)
+    try {
+      const res = await imageInfo
+      if (res?.data) {
+        currentImage.value!.channels = res.data.channels
+      }
+    } catch {
+      // image info optional, proceed without it
+    }
   }
 
   async function loadAnnotation(img: TreeFile) {
@@ -288,6 +299,11 @@ export const useAnnotationStore = defineStore('annotation', () => {
     return img.preview_path || `/uploads/${modelId.value}/${resourceType.value}/preview/${img.rel_path}`
   }
 
+  function channelLabel(channels: number | undefined): string {
+    if (channels === 1) return '灰度'
+    return '彩色'
+  }
+
   function prevImage() {
     const images = allImages.value
     if (images.length === 0 || !currentImage.value) return
@@ -320,6 +336,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
     deleteFolder: deleteFolderFn,
     getCompressPathByImage,
     getPreviewPathByImage,
+    channelLabel,
     prevImage,
     nextImage,
     onFolderRemoved,

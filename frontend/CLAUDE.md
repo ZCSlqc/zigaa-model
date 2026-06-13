@@ -34,6 +34,9 @@ npm run build    # vue-tsc → vite build
 - 三种模式: `draw`(crosshair) / `select`(default) / `pan`(move)
 - 撤销: 比较当前 va[] 与 `originalVaSnapshot`
 - 视图状态持久化: 缩放/平移不随图片切换重置，全局保留 `scale`/`panX`/`panY`
+- Tree 折叠高亮: 从时间戳文件夹起沿路径找第一个折叠的文件夹高亮（蓝色），全展开则高亮图片本身
+- 树列表滚动置顶: 切换图片 / 折叠展开 / 全部展开 / 全部折叠时，高亮节点自动 scrollIntoView({ block: 'start' }) 置顶
+- 图片路径显示: 面板顶部"全部展开/全部折叠"按钮上方显示当前图片 rel_path，最多 2 行，悬停完整路径
 
 完整标注系统流程见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 

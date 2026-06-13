@@ -7,9 +7,6 @@
         <span v-if="hasErrorCount > 0" class="count-err">{{ hasErrorCount }} 张</span>
       </span>
     </div>
-    <div v-if="currentImageRelPath" class="current-path" :title="currentImageRelPath">
-      文件路径：{{ currentImageRelPath }}
-    </div>
     <div class="panel-actions">
       <span class="action-link" @click="expandAll">全部展开</span>
       <span class="action-sep">/</span>

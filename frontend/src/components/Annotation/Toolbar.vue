@@ -92,6 +92,15 @@
       >
         {{ showLabels ? "隐藏标签" : "显示标签" }}
       </el-button>
+      <el-button
+        size="small"
+        :class="{ active: showEdges }"
+        text
+        class="btn-edges"
+        @click="emit('toggleEdges')"
+      >
+        {{ showEdges ? "隐藏轮廓" : "显示轮廓" }}
+      </el-button>
     </div>
 
     <div class="toolbar-sep"></div>
@@ -172,6 +181,7 @@ const props = defineProps<{
   hasChanges: boolean;
   resourceType: "good" | "defect";
   showLabels: boolean;
+  showEdges: boolean;
   hasImage: boolean;
   imageName?: string;
   loadingSave?: boolean;
@@ -187,6 +197,7 @@ const emit = defineEmits<{
   save: [];
   switchResource: [type: "good" | "defect"];
   toggleLabels: [];
+  toggleEdges: [];
   deleteImage: [];
 }>();
 
@@ -378,6 +389,17 @@ async function confirmDeleteImage() {
   &:hover {
     background: #f78989 !important;
     border-color: #f78989 !important;
+  }
+}
+
+.btn-edges.active {
+  background: #e6a23c !important;
+  border-color: #e6a23c !important;
+  color: #fff !important;
+
+  &:hover {
+    background: #ebb563 !important;
+    border-color: #ebb563 !important;
   }
 }
 </style>

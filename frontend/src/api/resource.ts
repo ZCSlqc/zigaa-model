@@ -94,6 +94,12 @@ export function getResourceTree(modelId: string, resourceType: string, layer: st
   })
 }
 
+export function getImageInfo(modelId: string, resourceType: string, path: string) {
+  return client.get(`/resources/${modelId}/${resourceType}/image-info`, {
+    params: { path },
+  })
+}
+
 // 单图标注
 export function getAnnotation(modelId: string, resourceType: string, imagePath: string) {
   return client.get(`/annotations/${modelId}/${resourceType}/${imagePath}`)

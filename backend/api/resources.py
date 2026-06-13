@@ -9,13 +9,14 @@ import shutil
 import tempfile
 import time
 import zipfile
+import cv2
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.models import DataPackage
 from core.auth import get_current_user, check_model_owner
 from services.directory import get_model_dir, get_resource_dir, build_resource_tree
-from services.helper import is_supported_image, process_images_parallel
+from services.helper import is_supported_image, process_images_parallel, get_image_size
 from services.resource import (
     update_model_status,
     clear_resource,
@@ -35,7 +36,7 @@ from services.chunk_download import (
     CHUNK_SIZE as DOWNLOAD_CHUNK_SIZE,
 )
 from services.zip_queue import enqueue_assemble_and_process, get_upload_status as get_zip_upload_status, _delete_status
-from core.config import UPLOAD_DIR, UPLOAD_TMP_DIR
+from core.config import UPLOAD_DIR, UPLOAD_TMP_DIR, SUPPORTED_IMAGE_EXTS
 
 logger = logging.getLogger("zigaa")
 
@@ -161,6 +162,30 @@ def _delete_resource(model_id: str, resource_type: str, db: Session, user_id: st
 
 
 # ── 目录树 ─────────────────────────────────────────────
+
+
+@router.get("/{model_id}/{resource_type}/image-info")
+def get_image_info(
+    model_id: str,
+    resource_type: str,
+    path: str = Query(..., alias="path"),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """获取图片信息：宽高、通道数（1=灰度, 3=彩色）"""
+    _validate_resource_type(resource_type)
+    check_model_owner(model_id, user["user_id"], db)
+
+    img_path = os.path.join(get_resource_dir(model_id, resource_type), "original", path)
+    if not os.path.exists(img_path):
+        raise HTTPException(status_code=404, detail="图片不存在")
+
+    w, h = get_image_size(img_path)
+    channels = 3
+    raw = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+    if raw is not None:
+        channels = raw.shape[2] if len(raw.shape) == 3 else 1
+    return {"width": w, "height": h, "channels": channels}
 
 
 @router.get("/tree")

@@ -187,11 +187,17 @@
          │  │ 画布区    │    │ 图片面板 280px  │ │
          │  │ (flex:1) │    │                 │ │
          │  │          │    │ ImagePanel      │ │
-         │  │ Toolbar  │    │ ┌─────────────┐ │ │
-         │  │ (top)    │    │ │ TreeItem    │ │ │
-         │  │          │    │ │ (recursive) │ │ │
-         │  │ v-stage  │    │ └─────────────┘ │ │
-         │  │ ──────── │    │                 │ │
+         │  │ Toolbar  │    │ 文件路径          │ │
+         │  │ (top)    │    │ ┌─────────────┐ │ │
+         │  │          │    │ │ TreeItem    │ │ │
+         │  │ v-stage  │    │ │ (recursive) │ │ │
+         │  │ ──────── │    │ │             │ │ │
+         │  │ bg image │    │ 全部展开/折叠   │ │
+         │  │ v-path   │    │ 高亮自动置顶    │ │
+         │  │ v-line   │    └─────────────┘ │ │
+         │  │ v-circle │  三种模式：         │ │
+         │  │ v-label  │  draw/select/pan   │ │
+         │  └──────────┘                     │
          │  │ bg image │    └─────────────────┘ │
          │  │ v-path   │                        │
          │  │ v-line   │  三种模式：             │
@@ -236,12 +242,16 @@
 - HIT_RADIUS = 4px 屏幕像素，`4 / scale` 检测
 - EDGE_HIT_RADIUS = 3px 屏幕像素，点击边插入顶点用
 - 视图状态持久化: 缩放/平移全局保留，切换图片不重置，仅首次加载时 `centerImage()`
-- EDGE_HIT_RADIUS = 3px 屏幕像素，点击边插入顶点用
 - 边宽度 `ANNOTATION_EDGE_WIDTH / scale`，顶点半径 `ANNOTATION_VERTEX_RADIUS / scale`（hover `ANNOTATION_VERTEX_HOVER_RADIUS / scale`），边hover `ANNOTATION_EDGE_HOVER_WIDTH / scale`，删除按钮 `ANNOTATION_DELETE_BTN_RADIUS / scale` — 5个参数均在 .env 配置
 - 绘制灵敏度：`HIT_RADIUS`、`EDGE_HIT_RADIUS`、`DRAW_MIN_IMAGE_DIST`、`DRAW_MIN_SCREEN_DIST` 均通过 `VITE_*` 环境变量配置
+- **Tree 折叠高亮**：从时间戳文件夹起沿路径找第一个折叠的文件夹高亮（蓝色），全展开则高亮图片本身。高亮在 `good/original` 之下生效，不冒泡到注入层
+- **树列表滚动置顶**：切换图片、点击折叠/展开、点击"全部展开/全部折叠"时，高亮节点自动 `scrollIntoView({ block: 'start' })`
 - 撤销：比较 va[] 与 `originalVaSnapshot`
 - 快捷键：Tab 切换模式 / Space 撤回点 / Ctrl+S 保存 / Ctrl+Z 撤销 / ← → 切换图片
+- **显示标签/隐藏标签**：控制多边形标签的显示/隐藏
+- **显示轮廓/隐藏轮廓**（橙色按钮）：控制多边形填充和边的显示/隐藏（顶点、删除按钮、标签不受影响）
 - test/template 资源 → PreviewView 只读渲染（仅 pan + zoom）
+- **画布标题栏**：canvas 顶部显示 `图片路径：xxx | 通道数：N（灰度/彩色） | 分辨率：W×H`
 
 ### 测试预览流程
 
@@ -277,6 +287,9 @@
 - JSON 标注路径根据 test_status 动态切换
 - 测试未完成仍可进入预览，但标注可能为空
 - 无需迁移操作，直接读 `upload_path/test/`
+- **画布标题栏**：同 AnnotateView，显示图片路径、通道数、分辨率
+- **ImagePanel**：共享组件，test/template 下显示为"测试图片"/"模板图片"
+- **标注渲染**：只读显示 va[]（填充+边+标签），无 hover 交互、无顶点拖拽
 
 ### 日志查看
 
@@ -325,6 +338,8 @@
 ### views/AnnotateView.vue — 标注编辑器
 
 基于 Konva 的多边形标注编辑器，是前端最复杂的组件。
+
+**工具栏**：返回 / 绘制轮廓 / 编辑选择 / 保存标注 / 删除标注 / 撤销标注 / 删除图片 / 显示标签-隐藏标签 / 显示轮廓-隐藏轮廓（橙色）/ 良品-缺陷
 
 **三种模式**：
 

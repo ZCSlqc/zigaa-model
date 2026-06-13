@@ -501,6 +501,14 @@ uploads/{model_id}/{type}/
 | `get_resource_dir()` | 返回 `uploads/{model_id}/{type}/` |
 | `build_resource_tree()` | 遍历 `original/` 目录，生成图片树结构（只扫描图片文件） |
 
+### api/resources.py — image-info 端点
+
+| 端点 | 职责 |
+|------|------|
+| `GET /{model}/{type}/image-info?path=<xxx>` | 获取图片信息：宽高、通道数（`cv2.IMREAD_UNCHANGED` 读取原图，1=灰度, 3=彩色） |
+
+按需调用（选图片时），不增加建树或上传的额外开销。
+
 ### services/validator.py — 标注校验
 
 9 级优先级校验 `va[]` JSON 格式，详见**标注校验系统**章节。

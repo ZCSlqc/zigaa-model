@@ -8,6 +8,7 @@
         :has-changes="hasChanges"
         :resource-type="store.resourceType as 'good' | 'defect'"
         :show-labels="showLabels"
+        :show-edges="showEdges"
         :has-image="!!store.currentImage"
         :image-name="store.currentImage?.name"
         :loading-save="loadingSave"
@@ -19,6 +20,7 @@
         @save="saveAnnotation"
         @switch-resource="onSwitchResource"
         @toggle-labels="showLabels = !showLabels"
+        @toggle-edges="showEdges = !showEdges"
         @delete-image="deleteImage"
       />
 
@@ -26,6 +28,9 @@
         <ImagePanel />
 
         <div class="canvas-container" ref="containerRef" @contextmenu.prevent>
+          <div v-if="store.currentImage" class="canvas-title">
+            图片路径：{{ store.currentImage.rel_path }}&ensp;|&ensp;通道数：{{ store.currentImage.channels || 3 }}（{{ store.channelLabel(store.currentImage.channels) }}）&ensp;|&ensp;分辨率：{{ imgW }}×{{ imgH }}
+          </div>
           <v-stage
             v-if="imageReady"
             ref="stageRef"
@@ -41,7 +46,7 @@
               />
 
               <!-- 1. 多边形（填充 + 边独立渲染以支持 hover 加粗） -->
-              <template v-for="(entry, idx) in currentEntries" :key="idx">
+              <template v-for="(entry, idx) in currentEntries" :key="idx" v-if="showEdges">
                 <!-- 填充层 -->
                 <v-path
                   :config="{
@@ -263,6 +268,7 @@ const drawingPoints = ref<Array<{ x: number; y: number }>>([])
 const isDrawing = ref(false)
 const selectedIdx = ref<number | null>(null)
 const showLabels = ref(true)
+const showEdges = ref(true)
 
 // Loading states with 500ms delay
 let loadingTimer: ReturnType<typeof setTimeout> | null = null
@@ -1207,6 +1213,22 @@ onUnmounted(() => {
   user-select: none;
   -webkit-user-drag: none;
   cursor: crosshair;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-title {
+  flex-shrink: 0;
+  padding: 6px var(--spacing-md);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-light);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-empty {

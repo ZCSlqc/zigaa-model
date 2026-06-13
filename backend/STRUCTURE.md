@@ -101,6 +101,7 @@ backend/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/tree` | 目录树 |
+| GET | `/{model}/{type}/image-info` | 图片信息（宽高、通道数） |
 | POST | `/{model}/{type}/upload-init` | 上传初始化 |
 | POST | `/{model}/{type}/upload-chunk` | 上传分片 |
 | POST | `/{model}/{type}/upload-complete` | 上传完成（入队异步） |
