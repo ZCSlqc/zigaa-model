@@ -507,7 +507,7 @@ uploads/{model_id}/{type}/
 |------|------|
 | `GET /{model}/{type}/image-info?path=<xxx>` | 获取图片信息：宽高、通道数（`cv2.IMREAD_UNCHANGED` 读取原图，1=灰度, 3=彩色） |
 
-按需调用（选图片时），不增加建树或上传的额外开销。
+按需调用（选图片时），前端 `channelsCache` 缓存每张图片的通道数，切换回来时优先使用旧值/缓存值，避免闪烁。不增加建树或上传的额外开销。
 
 ### services/validator.py — 标注校验
 

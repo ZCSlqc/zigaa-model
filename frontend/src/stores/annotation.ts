@@ -143,14 +143,24 @@ export const useAnnotationStore = defineStore('annotation', () => {
     }
   }
 
+  // Cached channel count per image (persisted across image switches)
+  const channelsCache = new Map<string, number>()
+
   async function selectImage(img: TreeFile) {
-    // Fetch image info (channels) concurrently with annotation load
+    // Save current channels for flicker-free transition
+    const oldChannels = currentImage.value?.channels
+    const cachedCh = channelsCache.get(img.original_rel_path)
+
+    // Use cached channels if available, otherwise fall back to old value
+    const channels = cachedCh ?? oldChannels
+
+    currentImage.value = { ...img, channels }
     const imageInfo = getImageInfo(modelId.value, resourceType.value, img.original_rel_path).catch(() => null)
-    currentImage.value = { ...img }
     await loadAnnotation(img)
     try {
       const res = await imageInfo
       if (res?.data) {
+        channelsCache.set(img.original_rel_path, res.data.channels)
         currentImage.value!.channels = res.data.channels
       }
     } catch {
