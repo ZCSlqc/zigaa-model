@@ -99,7 +99,6 @@
                       strokeWidth: ANNOTATION_EDGE_WIDTH / scale,
                       draggable: !shiftKey,
                     }"
-                    @dragstart="selectedIdx = entry._origIdx"
                     @dragmove="onEntryPointDragMove($event, entry._origIdx, i)"
                     @dragend="onEntryPointDragEnd($event, entry._origIdx, i)"
                   />
@@ -266,7 +265,6 @@ const imageReady = ref(false)
 const mode = ref<'draw' | 'select' | 'pan'>('draw')
 const drawingPoints = ref<Array<{ x: number; y: number }>>([])
 const isDrawing = ref(false)
-const selectedIdx = ref<number | null>(null)
 const showLabels = ref(true)
 const showEdges = ref(true)
 
@@ -394,7 +392,13 @@ function isInImageBounds(pt: { x: number; y: number }): boolean {
   return pt.x >= 0 && pt.x <= imgW.value && pt.y >= 0 && pt.y <= imgH.value
 }
 
-
+/** Clamp a point to image boundaries [0, imgW] x [0, imgH] */
+function clampToImage(pt: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.max(0, Math.min(imgW.value, pt.x)),
+    y: Math.max(0, Math.min(imgH.value, pt.y)),
+  }
+}
 
 function handleWheel(e: WheelEvent) {
   e.preventDefault()
@@ -466,9 +470,9 @@ function linePoints(pts: Array<{ x: number; y: number }>): number[] {
 
 function previewLinePoints(): number[] {
   if (drawingPoints.value.length === 0) return []
-  if (!isInImageBounds(mousePos.value)) return []
   const last = drawingPoints.value[drawingPoints.value.length - 1]
-  return [last.x, last.y, mousePos.value.x, mousePos.value.y]
+  const clamped = clampToImage(mousePos.value)
+  return [last.x, last.y, clamped.x, clamped.y]
 }
 
 function findHoveredPoint(skipLast: boolean = false) {
@@ -521,8 +525,6 @@ const currentEntries = computed(() => {
     .filter(Boolean) as Array<{ label: number; labelname: string; pts: Array<{ x: number; y: number }>; _origIdx: number }>
 })
 
-// Snapshot of va[] when first loaded (for reset)
-const originalVaSnapshot = ref<Array<any>>([])
 const changedFlag = ref(false)
 function markChanged() { changedFlag.value = true }
 function resetChangeFlag() { changedFlag.value = false }
@@ -566,7 +568,6 @@ function handleStageMouseDown(e: any) {
       if (entry && entry.pts.length > 3) {
         const origIdx = entry._origIdx
         store.annotationData!.va[origIdx].pts.splice(ptIdx, 1)
-        originalVaSnapshot.value = JSON.parse(JSON.stringify(store.annotationData!.va))
         resetChangeFlag()
         hoveredVertex.value = null
         return
@@ -616,7 +617,6 @@ function handleStageMouseDown(e: any) {
       isPanning.value = true
       const containerRect = containerRef.value!.getBoundingClientRect()
       lastPos.value = { x: e.evt.clientX - containerRect.left, y: e.evt.clientY - containerRect.top }
-      selectedIdx.value = null
     }
     return
   }
@@ -638,25 +638,17 @@ function handleStageMouseDown(e: any) {
       return
     }
 
-    if (!isInImageBounds(pt)) {
-      // Click outside image but inside canvas — cancel drawing
-      if (isDrawing.value) {
-        drawingPoints.value = []
-        isDrawing.value = false
-        hoveredPointIdx.value = null
-      }
-      return
-    }
-
     isDrawingDrag.value = false
     lastDrawPoint.value = null
     if (!isDrawing.value) {
       isDrawing.value = true
       drawingPoints.value = []
     }
-    drawingPoints.value.push({ x: pt.x, y: pt.y })
+    // Clamp point to image boundaries
+    const clampedPt = clampToImage(pt)
+    drawingPoints.value.push(clampedPt)
     isDrawingDrag.value = true
-    lastDrawPoint.value = { ...pt }
+    lastDrawPoint.value = { ...clampedPt }
   }
 }
 
@@ -685,13 +677,15 @@ function handleStageMouseMove(e: any) {
     const pt = { x: pos.x, y: pos.y }
     mousePos.value = pt
 
-    if (isDrawingDrag.value && lastDrawPoint.value && isInImageBounds(pt)) {
-      const dx = pt.x - lastDrawPoint.value.x
-      const dy = pt.y - lastDrawPoint.value.y
+    if (isDrawingDrag.value && lastDrawPoint.value) {
+      // Clamp point to image boundaries before distance check
+      const clampedPt = clampToImage(pt)
+      const dx = clampedPt.x - lastDrawPoint.value.x
+      const dy = clampedPt.y - lastDrawPoint.value.y
       const minDist = Math.max(DRAW_MIN_IMAGE_DIST, DRAW_MIN_SCREEN_DIST / scale.value)
       if (dx * dx + dy * dy >= minDist * minDist) {
-        drawingPoints.value.push(pt)
-        lastDrawPoint.value = pt
+        drawingPoints.value.push(clampedPt)
+        lastDrawPoint.value = clampedPt
       }
     }
 
@@ -705,72 +699,72 @@ function handleStageMouseMove(e: any) {
 
   // Select mode: hover detection for label and delete button
   if (mode.value === 'select' && !isPanning.value) {
-    const containerRect = containerRef.value!.getBoundingClientRect()
-    const screenX = e.evt.clientX - containerRect.left
-    const screenY = e.evt.clientY - containerRect.top
-    const pt = {
-      x: (screenX - panX.value) / scale.value,
-      y: (screenY - panY.value) / scale.value,
-    }
-
-    let foundDelete = false
-    let foundLabel = false
-    let foundVertexOrEdge = false
-
-    for (let idx = 0; idx < currentEntries.value.length; idx++) {
-      const entry = currentEntries.value[idx]
-      if (!entry.pts.length) continue
-      const fp = entry.pts[0]
-
-      // Delete button hover (below first point)
-      const dly = fp.y + 8 / scale.value
-      const dbx = fp.x
-      const ddx = pt.x - dbx
-      const ddy = pt.y - dly
-      if (ddx * ddx + ddy * ddy <= (7 / scale.value) * (7 / scale.value)) {
-        foundDelete = true
-        hoveredDeleteBtn.value = idx
-        break // delete button takes priority
-      }
-
-      // Label hover (centered on first point, above)
-      const ly = fp.y - 24 / scale.value
-      const halfW = labelWidthPx(entry) / 2 + 4 / scale.value
-      if (Math.abs(pt.x - fp.x) < halfW && pt.y >= ly - 2 / scale.value && pt.y <= ly + 14 / scale.value) {
-        foundLabel = true
-        hoveredLabel.value = idx
-      }
-    }
-
-    // Mutually exclusive: vertex hover OR edge hover
-    // Only check when delete and label are not hit
-    if (!foundDelete && !foundLabel) {
-      const hit = findHoveredVertexOrEdge(pt)
-      if (hit?.type === 'vertex') {
-        foundVertexOrEdge = true
-        hoveredVertex.value = { entryIdx: hit.entryIdx, ptIdx: hit.ptIdx }
-        hoveredEdge.value = null
-      } else if (hit?.type === 'edge') {
-        foundVertexOrEdge = true
-        hoveredEdge.value = { entryIdx: hit.entryIdx, edgeIdx: hit.edgeIdx }
-        hoveredVertex.value = null
-      }
-    }
-
-    if (!foundDelete) {
-      hoveredDeleteBtn.value = null
-    }
-    if (!foundLabel) {
-      hoveredLabel.value = null
-    }
-    if (!foundVertexOrEdge) {
-      hoveredVertex.value = null
-      hoveredEdge.value = null
-    }
-
-    // Update cursor based on hover state
     const stageNode = stageRef.value?.getNode()
-    if (stageNode) {
+    const stageRect = stageNode?.container()?.getBoundingClientRect()
+    if (stageRect) {
+      const screenX = e.evt.clientX - stageRect.left
+      const screenY = e.evt.clientY - stageRect.top
+      const pt = {
+        x: (screenX - panX.value) / scale.value,
+        y: (screenY - panY.value) / scale.value,
+      }
+
+      let foundDelete = false
+      let foundLabel = false
+      let foundVertexOrEdge = false
+
+      for (let idx = 0; idx < currentEntries.value.length; idx++) {
+        const entry = currentEntries.value[idx]
+        if (!entry.pts.length) continue
+        const fp = entry.pts[0]
+
+        // Delete button hover (below first point)
+        const dly = fp.y + 8 / scale.value
+        const dbx = fp.x
+        const ddx = pt.x - dbx
+        const ddy = pt.y - dly
+        if (ddx * ddx + ddy * ddy <= (7 / scale.value) * (7 / scale.value)) {
+          foundDelete = true
+          hoveredDeleteBtn.value = idx
+          break // delete button takes priority
+        }
+
+        // Label hover (centered on first point, above)
+        const ly = fp.y - 24 / scale.value
+        const halfW = labelWidthPx(entry) / 2 + 4 / scale.value
+        if (Math.abs(pt.x - fp.x) < halfW && pt.y >= ly - 2 / scale.value && pt.y <= ly + 14 / scale.value) {
+          foundLabel = true
+          hoveredLabel.value = idx
+        }
+      }
+
+      // Mutually exclusive: vertex hover OR edge hover
+      // Only check when delete and label are not hit
+      if (!foundDelete && !foundLabel) {
+        const hit = findHoveredVertexOrEdge(pt)
+        if (hit?.type === 'vertex') {
+          foundVertexOrEdge = true
+          hoveredVertex.value = { entryIdx: hit.entryIdx, ptIdx: hit.ptIdx }
+          hoveredEdge.value = null
+        } else if (hit?.type === 'edge') {
+          foundVertexOrEdge = true
+          hoveredEdge.value = { entryIdx: hit.entryIdx, edgeIdx: hit.edgeIdx }
+          hoveredVertex.value = null
+        }
+      }
+
+      if (!foundDelete) {
+        hoveredDeleteBtn.value = null
+      }
+      if (!foundLabel) {
+        hoveredLabel.value = null
+      }
+      if (!foundVertexOrEdge) {
+        hoveredVertex.value = null
+        hoveredEdge.value = null
+      }
+
+      // Update cursor based on hover state
       if (foundDelete || foundLabel || foundVertexOrEdge) {
         stageNode.container()?.style.setProperty('cursor', 'pointer')
       }
@@ -996,8 +990,8 @@ function onEntryPointDragMove(e: any, origIdx: number, pointIdx: number) {
   }
 }
 
-function onEntryPointDragEnd(_e: any, idx: number, _pointIdx: number) {
-  selectedIdx.value = idx
+function onEntryPointDragEnd(_e: any, _idx: number, _pointIdx: number) {
+  // no-op
 }
 
 function deleteEntry(origIdx: number) {
@@ -1012,7 +1006,6 @@ function deleteAll() {
   if (store.annotationData) {
     store.annotationData.va = []
     markChanged()
-    selectedIdx.value = null
   }
 }
 
@@ -1024,15 +1017,8 @@ async function resetAnnotation() {
   drawingPoints.value = []
   isDrawing.value = false
   hoveredPointIdx.value = null
-  selectedIdx.value = null
   // Reload annotation from server
   await store.loadAnnotation(store.currentImage)
-  // Re-save snapshot
-  if (store.annotationData?.va) {
-    originalVaSnapshot.value = JSON.parse(JSON.stringify(store.annotationData.va))
-  } else {
-    originalVaSnapshot.value = []
-  }
   resetChangeFlag()
   stopLoading()
   ElMessage.success('已撤销修改')
@@ -1060,9 +1046,6 @@ async function saveAnnotation() {
   startLoading('save')
   try {
     await store.save()
-    if (store.annotationData?.va) {
-      originalVaSnapshot.value = JSON.parse(JSON.stringify(store.annotationData.va))
-    }
     resetChangeFlag()
   } catch (e: any) {
     ElMessage.error(e.message || '保存失败')
@@ -1088,15 +1071,11 @@ function setMode(m: 'draw' | 'select' | 'pan') {
     drawingPoints.value = []
     hoveredPointIdx.value = null
   }
-  if (m !== 'select') {
-    selectedIdx.value = null
-  }
 }
 
 
 // Watch for image change — full reset
 watch(() => store.currentImage, (newImg, oldImg) => {
-  selectedIdx.value = null
   drawingPoints.value = []
   isDrawing.value = false
   hoveredPointIdx.value = null
@@ -1113,11 +1092,10 @@ watch(() => store.currentImage, (newImg, oldImg) => {
   }
 })
 
-// Auto-capture snapshot when annotation data loads from server
+// Reset change flag when annotation data loads from server
 watch(() => store.annotationData, (newData, oldData) => {
-  // Only capture on fresh load (when image changes, annotationData goes null → data)
+  // Only on fresh load (when image changes, annotationData goes null → data)
   if (oldData === null && newData !== null && store.currentImage) {
-    originalVaSnapshot.value = JSON.parse(JSON.stringify(newData.va || []))
     resetChangeFlag()
   }
 }, { immediate: false })
