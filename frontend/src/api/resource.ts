@@ -117,6 +117,11 @@ export function deleteFolder(modelId: string, resourceType: string, folderPath: 
   return client.delete(`/annotations/${modelId}/${resourceType}/folder/${folderPath}`)
 }
 
+// 更新图片 msgs（category 等）
+export function updateImageMsg(modelId: string, resourceType: string, imagePath: string, data: { category: string }) {
+  return client.patch(`/annotations/${modelId}/${resourceType}/msg/${imagePath}`, data)
+}
+
 // 分片下载
 export function downloadInit(modelId: string, resourceType: string) {
   return client.post(`/resources/${modelId}/${resourceType}/download-init`, {}, { timeout: LONG_TIMEOUT })

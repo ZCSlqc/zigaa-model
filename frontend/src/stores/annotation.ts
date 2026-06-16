@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getResourceTree, getAnnotation, saveAnnotation, deleteImage, deleteFolder, getImageInfo } from '../api/resource'
+import { getResourceTree, getAnnotation, saveAnnotation, deleteImage, deleteFolder, getImageInfo, updateImageMsg } from '../api/resource'
 import { getModel } from '../api/model'
 import { ElMessage } from 'element-plus'
 
@@ -25,9 +25,12 @@ export interface TreeFile {
   original_rel_path: string
   compress_path?: string
   preview_path?: string
+  width?: number
+  height?: number
   channels?: number // 1=灰度, 3=彩色
   error?: string
   error_level?: number // 1-5 red (critical), 6-9 yellow (warning), 0 = OK
+  category?: 'none' | 'undone' | 'pending' // 用户分类标记
 }
 
 export interface TreeFolder {
@@ -46,21 +49,17 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const currentImage = ref<TreeFile | null>(null)
   const loading = ref(false)
   const annotationLoading = ref(false)
+  const categoryFilter = ref<string | undefined>(undefined)
 
-  const allImages = computed(() => {
-    const images: TreeFile[] = []
-    const walk = (nodes: TreeNode[]) => {
-      for (const node of nodes) {
-        if (isFolder(node)) {
-          walk(node.children)
-        } else {
-          images.push(node)
-        }
-      }
-    }
-    walk(tree.value)
-    return images
-  })
+  // ── Callbacks for external listeners ──
+
+  const _categoryCallbacks: ((path: string) => void)[] = []
+  function onCategoryUpdated(cb: (path: string) => void) {
+    _categoryCallbacks.push(cb)
+    return () => { const i = _categoryCallbacks.indexOf(cb); if (i >= 0) _categoryCallbacks.splice(i, 1) }
+  }
+
+  // ── Tree helpers ──
 
   function isFolder(node: TreeNode): node is TreeFolder {
     return 'children' in node
@@ -72,6 +71,41 @@ export const useAnnotationStore = defineStore('annotation', () => {
     return fullPath.replace(/^\/uploads\/[^/]+\/[^/]+\/[^/]+\/(.*?)(\.[^.]+)$/, '$1')
   }
 
+  // Flatten tree to all files
+  const allImages = computed(() => {
+    const images: TreeFile[] = []
+    const walk = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        if (isFolder(node)) walk(node.children)
+        else images.push(node)
+      }
+    }
+    walk(tree.value)
+    return images
+  })
+
+  // Filtered images by category
+  function getFilteredImages(filter: string | undefined): TreeFile[] {
+    if (!filter) return allImages.value
+    return allImages.value.filter(img => img.category === filter)
+  }
+
+  // Find a TreeFile node in tree by path
+  function findNode(path: string): TreeFile | null {
+    const walk = (nodes: TreeNode[]): TreeFile | null => {
+      for (const n of nodes) {
+        if ('children' in n) {
+          const m = walk(n.children)
+          if (m) return m
+        } else if (n.path === path || n.rel_path === path) return n
+      }
+      return null
+    }
+    return walk(tree.value)
+  }
+
+  // ── Async actions ──
+
   async function loadModel(modelIdValue: string, type: 'good' | 'defect' | 'test' | 'template' = 'good') {
     modelId.value = modelIdValue
     resourceType.value = type
@@ -82,17 +116,19 @@ export const useAnnotationStore = defineStore('annotation', () => {
         getModel(modelIdValue).catch(() => null),
       ])
 
-      // Build error map from backend errors (key = image path with extension)
       const errorMap = new Map<string, { message: string; level: number }>()
-      const modelData = modelRes?.data
-      const pkg = modelData?.packages?.find((p: any) => p.resource_type === type)
-      for (const err of pkg?.errors || []) {
-        errorMap.set(err.path, { message: err.message, level: err.level ?? 1 })
+      const msgsMap = new Map<string, { width?: number; height?: number; channels?: number; category?: string }>()
+      const pkg = (modelRes?.data?.packages ?? []).find((p: any) => p.resource_type === type)
+
+      for (const [path, err] of Object.entries(pkg?.errors || {})) {
+        const e = err as any
+        errorMap.set(path, { message: e.message, level: e.level ?? 1 })
+      }
+      for (const [path, msg] of Object.entries(pkg?.msgs || {})) {
+        msgsMap.set(path, msg as any)
       }
 
-      const fullTree = treeRes.data.tree
-      const origNode = (fullTree.children || []).find((c: any) => c.name === 'original')
-      const rawChildren: any[] = origNode?.children || []
+      const rawChildren = ((treeRes.data.tree.children ?? []).find((c: any) => c.name === 'original')?.children) ?? []
 
       const buildTree = (nodes: any[]): TreeNode[] => {
         return nodes.map(node => {
@@ -104,28 +140,30 @@ export const useAnnotationStore = defineStore('annotation', () => {
             } as TreeFolder
           }
 
-          // Skip JSON files, only show images
           if (node.name.endsWith('.json')) return null!
 
           const relPath = extractRelPath(node.path)
-          const backendError = errorMap.get(relPath)
+          const backendError = errorMap.get(relPath) || errorMap.get(`${relPath.replace(/\.(jpg|jpeg|png)$/, '.json')}`)
+          const msgEntry = msgsMap.get(relPath) || msgsMap.get(`${relPath.replace(/\.(jpg|jpeg|png)$/, '.json')}`)
+
+          const category = msgEntry?.category && msgEntry.category !== '' ? msgEntry.category as 'none' | 'undone' | 'pending' : undefined
 
           return {
-            name: node.name,
-            size: node.size,
-            path: node.path,
+            name: node.name, size: node.size, path: node.path,
             has_annotation: backendError === undefined,
-            rel_path: relPath,
-            original_rel_path: relPath,
-            compress_path: node.compress_path,
-            preview_path: node.preview_path,
-            error: backendError?.message,
-            error_level: backendError?.level ?? 0,
+            rel_path: relPath, original_rel_path: relPath,
+            compress_path: node.compress_path, preview_path: node.preview_path,
+            width: msgEntry?.width ?? node.width,
+            height: msgEntry?.height ?? node.height,
+            channels: msgEntry?.channels,
+            error: backendError?.message, error_level: backendError?.level ?? 0,
+            category,
           } as TreeFile
         }).filter(Boolean)
       }
 
       tree.value = buildTree(rawChildren)
+
       currentImage.value = null
       annotationData.value = null
     } catch (e: any) {
@@ -143,17 +181,13 @@ export const useAnnotationStore = defineStore('annotation', () => {
     }
   }
 
-  // Cached channel count per image (persisted across image switches)
+  // Cached channel count per image
   const channelsCache = new Map<string, number>()
 
   async function selectImage(img: TreeFile) {
-    // Save current channels for flicker-free transition
     const oldChannels = currentImage.value?.channels
     const cachedCh = channelsCache.get(img.original_rel_path)
-
-    // Use cached channels if available, otherwise fall back to old value
     const channels = cachedCh ?? oldChannels
-
     currentImage.value = { ...img, channels }
     const imageInfo = getImageInfo(modelId.value, resourceType.value, img.original_rel_path).catch(() => null)
     await loadAnnotation(img)
@@ -163,9 +197,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
         channelsCache.set(img.original_rel_path, res.data.channels)
         currentImage.value!.channels = res.data.channels
       }
-    } catch {
-      // image info optional, proceed without it
-    }
+    } catch { /* optional */ }
   }
 
   async function loadAnnotation(img: TreeFile) {
@@ -188,7 +220,6 @@ export const useAnnotationStore = defineStore('annotation', () => {
       currentImage.value.has_annotation = true
       currentImage.value.error = undefined
       currentImage.value.error_level = 0
-      // Update tree to show no error
       updateTreeNodeError(currentImage.value, undefined, 0)
     } catch (e: any) {
       const msg = e.response?.data?.detail || e.message || '保存失败'
@@ -197,14 +228,9 @@ export const useAnnotationStore = defineStore('annotation', () => {
   }
 
   function updateTreeNodeError(target: TreeFile, error: string | undefined, level: number) {
-    const walk = (nodes: TreeNode[]) => {
+    const walk = (nodes: TreeNode[]): boolean => {
       for (const n of nodes) {
-        if (!isFolder(n) && n.path === target.path) {
-          n.error = error
-          n.error_level = level
-          n.has_annotation = error === undefined
-          return true
-        }
+        if (!isFolder(n) && n.path === target.path) { n.error = error; n.error_level = level; n.has_annotation = error === undefined; return true }
         if (isFolder(n) && walk(n.children)) return true
       }
       return false
@@ -212,7 +238,42 @@ export const useAnnotationStore = defineStore('annotation', () => {
     walk(tree.value)
   }
 
-  // 从 tree 中移除文件节点，如果父文件夹空了也移除，返回被移除的文件夹路径
+  // ── Category update ──
+
+  async function updateImageMsgFn(path: string, category: string) {
+    try {
+      await updateImageMsg(modelId.value, resourceType.value, path, { category })
+      const cat = category === 'none' ? undefined : (category as TreeFile['category'])
+      const found = findNode(path)
+      if (found) {
+        found.category = cat
+        // Don't reassign currentImage if it points to this node — let the
+        // caller (setCategory / ImagePanel) handle clearing or switching.
+      }
+      _categoryCallbacks.forEach(cb => cb(path))
+    } catch (e: any) {
+      ElMessage.error(e.response?.data?.detail || '更新标记失败')
+    }
+  }
+
+  // ── Navigation ──
+
+  function prevImage(filter?: string | undefined) {
+    const images = getFilteredImages(filter)
+    if (images.length === 0 || !currentImage.value) return
+    const idx = images.findIndex(img => img.path === currentImage.value!.path)
+    selectImage(images[(idx - 1 + images.length) % images.length])
+  }
+
+  function nextImage(filter?: string | undefined) {
+    const images = getFilteredImages(filter)
+    if (images.length === 0 || !currentImage.value) return
+    const idx = images.findIndex(img => img.path === currentImage.value!.path)
+    selectImage(images[(idx + 1) % images.length])
+  }
+
+  // ── Delete ──
+
   function removeFileNode(target: TreeFile): string[] {
     const removedFolders: string[] = []
     const walk = (nodes: TreeNode[]): boolean => {
@@ -220,16 +281,10 @@ export const useAnnotationStore = defineStore('annotation', () => {
         if (isFolder(nodes[i])) {
           const folder = nodes[i] as TreeFolder
           if (walk(folder.children)) {
-            if (folder.children.length === 0) {
-              removedFolders.push(folder.path)
-              nodes.splice(i, 1)
-            }
+            if (folder.children.length === 0) { removedFolders.push(folder.path); nodes.splice(i, 1) }
             return true
           }
-        } else if (nodes[i].path === target.path) {
-          nodes.splice(i, 1)
-          return true
-        }
+        } else if (nodes[i].path === target.path) { nodes.splice(i, 1); return true }
       }
       return false
     }
@@ -237,16 +292,12 @@ export const useAnnotationStore = defineStore('annotation', () => {
     return removedFolders
   }
 
-  // 从 tree 中移除文件夹节点
   function removeFolderNode(folderPath: string): void {
-    const walk = (nodes: TreeNode[]) => {
+    const walk = (nodes: TreeNode[]): boolean => {
       for (let i = 0; i < nodes.length; i++) {
         if (isFolder(nodes[i])) {
           const folder = nodes[i] as TreeFolder
-          if (folder.path === folderPath) {
-            nodes.splice(i, 1)
-            return true
-          }
+          if (folder.path === folderPath) { nodes.splice(i, 1); return true }
           if (walk(folder.children)) return true
         }
       }
@@ -261,14 +312,11 @@ export const useAnnotationStore = defineStore('annotation', () => {
     try {
       await deleteImage(modelId.value, resourceType.value, img.original_rel_path)
       ElMessage.success('图片已删除')
-      const removedFolders = removeFileNode(img)
-      // Return expandedFolders to caller so it can update
-      emitRemovedFolders(removedFolders)
+      emitRemovedFolders(removeFileNode(img))
       currentImage.value = null
       annotationData.value = null
     } catch (e: any) {
-      const msg = e.response?.data?.detail || e.message || '删除失败'
-      ElMessage.error(msg)
+      ElMessage.error(e.response?.data?.detail || e.message || '删除失败')
     }
   }
 
@@ -283,23 +331,20 @@ export const useAnnotationStore = defineStore('annotation', () => {
         annotationData.value = null
       }
     } catch (e: any) {
-      const msg = e.response?.data?.detail || e.message || '删除失败'
-      ElMessage.error(msg)
+      ElMessage.error(e.response?.data?.detail || e.message || '删除失败')
     }
   }
 
-  // Track which folders were auto-removed so ImagePanel can remove from expandedFolders
-  const onFolderRemovedCallbacks: ((paths: string[]) => void)[] = []
-  function emitRemovedFolders(paths: string[]) {
-    for (const cb of onFolderRemovedCallbacks) { cb(paths) }
-  }
+  // ── Folder removal notifications ──
+
+  const _folderCallbacks: ((paths: string[]) => void)[] = []
   function onFolderRemoved(cb: (paths: string[]) => void) {
-    onFolderRemovedCallbacks.push(cb)
-    return () => {
-      const idx = onFolderRemovedCallbacks.indexOf(cb)
-      if (idx >= 0) onFolderRemovedCallbacks.splice(idx, 1)
-    }
+    _folderCallbacks.push(cb)
+    return () => { const i = _folderCallbacks.indexOf(cb); if (i >= 0) _folderCallbacks.splice(i, 1) }
   }
+  function emitRemovedFolders(paths: string[]) { for (const cb of _folderCallbacks) cb(paths) }
+
+  // ── Utilities ──
 
   function getCompressPathByImage(img: TreeFile): string {
     return img.compress_path || `/uploads/${modelId.value}/${resourceType.value}/compress/${img.rel_path}`
@@ -314,41 +359,14 @@ export const useAnnotationStore = defineStore('annotation', () => {
     return '彩色'
   }
 
-  function prevImage() {
-    const images = allImages.value
-    if (images.length === 0 || !currentImage.value) return
-    const idx = images.findIndex(img => img.path === currentImage.value!.path)
-    if (idx > 0) selectImage(images[idx - 1])
-  }
-
-  function nextImage() {
-    const images = allImages.value
-    if (images.length === 0 || !currentImage.value) return
-    const idx = images.findIndex(img => img.path === currentImage.value!.path)
-    if (idx < images.length - 1) selectImage(images[idx + 1])
-  }
-
   return {
-    modelId,
-    resourceType,
-    annotationData,
-    tree,
-    currentImage,
-    loading,
-    annotationLoading,
-    allImages,
-    loadModel,
-    switchResourceType,
-    selectImage,
-    loadAnnotation,
-    save,
-    deleteCurrentImage,
-    deleteFolder: deleteFolderFn,
-    getCompressPathByImage,
-    getPreviewPathByImage,
-    channelLabel,
-    prevImage,
-    nextImage,
-    onFolderRemoved,
+    modelId, resourceType, annotationData, tree, currentImage,
+    loading, annotationLoading, allImages,
+    loadModel, switchResourceType, selectImage, loadAnnotation, save,
+    deleteCurrentImage, deleteFolder: deleteFolderFn,
+    getCompressPathByImage, getPreviewPathByImage, channelLabel,
+    getFilteredImages, prevImage, nextImage,
+    onFolderRemoved, onCategoryUpdated, categoryFilter,
+    updateImageMsg: updateImageMsgFn,
   }
 })

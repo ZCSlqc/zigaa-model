@@ -74,17 +74,33 @@ def _process_extracted_dir(model_id: str, resource_type: str, extract_dir: str, 
                 rel = os.path.relpath(os.path.join(root, fname), original_dir)
                 new_image_rels.append(rel)
 
-    # 对新图片生成 compress/preview（并行）
+    # 对新图片生成 compress/preview（并行），返回 errors dict + msgs dict
     new_image_list = [(rel, None) for rel in new_image_rels]
-    new_errors = process_images_parallel(model_id, resource_type, original_dir, new_image_list)
+    new_errors, new_msgs = process_images_parallel(model_id, resource_type, original_dir, new_image_list)
 
-    # JSON 校验（仅 defect）
+    # JSON 校验（仅 defect），返回 errors dict
     if resource_type in ("defect"):
-        new_errors.extend(
-            validate_new_annotations(original_dir, new_image_rels)
-        )
+        json_errors = validate_new_annotations(original_dir, new_image_rels)
+        new_errors.update(json_errors)
 
-    new_passed = max(0, len(new_image_rels) - len(new_errors))
+    # Compute counts from errors dict keys
+    all_new_errors = set(new_errors.keys())
+    # Also track .json variants: if a jpg has an error, count it once
+    unique_error_images = set()
+    for key in all_new_errors:
+        base = os.path.splitext(key)[0]
+        if base + ".jpg" in all_new_errors:
+            unique_error_images.add(base + ".jpg")
+        elif base + ".png" in all_new_errors:
+            unique_error_images.add(base + ".png")
+        elif base + ".jpeg" in all_new_errors:
+            unique_error_images.add(base + ".jpeg")
+        else:
+            unique_error_images.add(key)
+    # For non-defect resource types, new_errors only contains process_error
+    # For defect, new_errors may also contain missing_json/invalid_json
+    actual_failed = len(unique_error_images)
+    new_passed = max(0, len(new_image_rels) - actual_failed)
 
     # upsert 台账
     dp = db.query(DataPackage).filter(
@@ -93,23 +109,29 @@ def _process_extracted_dir(model_id: str, resource_type: str, extract_dir: str, 
     ).first()
     if dp:
         dp.passed_count += new_passed
-        dp.failed_count += len(new_errors)
-        existing_errors = list(dp.errors or [])
-        existing_errors.extend(new_errors)
+        dp.failed_count += actual_failed
+        # Merge errors dict
+        existing_errors = dict(dp.errors or {})
+        existing_errors.update(new_errors)
         dp.errors = existing_errors
+        # Merge msgs dict (new images only)
+        existing_msgs = dict(dp.msgs or {})
+        existing_msgs.update(new_msgs)
+        dp.msgs = existing_msgs
     else:
         db.add(DataPackage(
             model_id=model_id,
             resource_type=resource_type,
             file_path=f"uploads/{model_id}/{resource_type}/",
             passed_count=new_passed,
-            failed_count=len(new_errors),
+            failed_count=actual_failed,
             errors=new_errors,
+            msgs=new_msgs,
         ))
     update_model_status(model_id, db)
     db.commit()
 
-    return {"success": True, "passed_count": new_passed, "failed_count": len(new_errors), "errors": new_errors}
+    return {"success": True, "passed_count": new_passed, "failed_count": actual_failed, "errors": new_errors, "msgs": new_msgs}
 
 
 def _validate_resource_type(resource_type: str):
@@ -370,7 +392,7 @@ def upload_parameter(model_id: str, file: UploadFile = File(...), db: Session = 
         file_path=f"uploads/{model_id}/parameter.json",
         passed_count=0,
         failed_count=0,
-        errors=[],
+        errors={},
     ))
     update_model_status(model_id, db)
     db.commit()
@@ -397,7 +419,7 @@ def edit_parameter(model_id: str, data: dict, db: Session = Depends(get_db), use
             file_path=f"uploads/{model_id}/parameter.json",
             passed_count=0,
             failed_count=0,
-            errors=[],
+            errors={},
         ))
 
     update_model_status(model_id, db)

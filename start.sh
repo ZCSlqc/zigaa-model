@@ -23,7 +23,7 @@ pkill -f "vite.*--port 3" 2>/dev/null || true
 
 sleep 1
 
-mkdir -p uploads log
+mkdir -p log
 
 echo "🚀 启动中..."
 

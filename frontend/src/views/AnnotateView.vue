@@ -29,7 +29,19 @@
 
         <div class="canvas-container" ref="containerRef" @contextmenu.prevent>
           <div v-if="store.currentImage" class="canvas-title">
-            图片路径：{{ store.currentImage.rel_path }}&ensp;|&ensp;通道数：{{ store.currentImage.channels || 3 }}（{{ store.channelLabel(store.currentImage.channels) }}）&ensp;|&ensp;分辨率：{{ imgW }}×{{ imgH }}
+            <span class="canvas-title-info">
+              图片路径：{{ store.currentImage.rel_path }}&ensp;|&ensp;通道数：{{ store.currentImage.channels || 3 }}&ensp;|&ensp;分辨率：{{ imgW }}×{{ imgH }}
+            </span>
+            <span class="canvas-title-category">
+              <el-button
+                v-for="opt in categoryOptions"
+                :key="opt.value"
+                :type="currentCategory === opt.value ? 'primary' : ''"
+                size="small"
+                :class="{ active: currentCategory === opt.value }"
+                @click="setCategory(opt.value)"
+              >{{ opt.label }}</el-button>
+            </span>
           </div>
           <v-stage
             v-if="imageReady"
@@ -239,6 +251,34 @@ const route = useRoute()
 const router = useRouter()
 const store = useAnnotationStore()
 const modelId = computed(() => route.params.modelId as string)
+
+// Category buttons on canvas-title
+const categoryOptions = [
+  { label: '默认', value: 'none' },
+  { label: '未标完', value: 'undone' },
+  { label: '待确认', value: 'pending' },
+]
+
+const currentCategory = computed(() => store.currentImage?.category || 'none')
+
+async function setCategory(category: string) {
+  if (!store.currentImage) return
+  const oldPath = store.currentImage.original_rel_path
+  const images = store.getFilteredImages(store.categoryFilter)
+  await store.updateImageMsg(oldPath, category)
+  // After change
+  if (store.categoryFilter) {
+    const remaining = store.getFilteredImages(store.categoryFilter)
+    if (remaining.length > 0) {
+      const oldIdx = images.findIndex(i => i.path === store.currentImage!.path)
+      store.selectImage(remaining[oldIdx % remaining.length])
+    } else {
+      // No remaining images — blank canvas
+      store.currentImage = null
+      store.annotationData = null
+    }
+  }
+}
 
 // Canvas state
 const containerRef = ref<HTMLElement>()
@@ -1127,10 +1167,10 @@ function handleKeyDown(e: KeyboardEvent) {
     setMode(mode.value === 'draw' ? 'select' : 'draw')
   } else if (e.key === 'ArrowLeft') {
     e.preventDefault()
-    store.prevImage()
+    store.prevImage(store.categoryFilter)
   } else if (e.key === 'ArrowRight') {
     e.preventDefault()
-    store.nextImage()
+    store.nextImage(store.categoryFilter)
   }
 }
 
@@ -1203,10 +1243,35 @@ onUnmounted(() => {
   color: var(--text-secondary);
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-light);
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.canvas-title-info {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.canvas-title-category {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: var(--spacing-md);
+}
+
+.canvas-title-category :deep(.el-button) {
+  padding: 0 6px;
+  height: 22px;
+  line-height: 22px;
+  font-size: 11px;
+  min-width: auto;
 }
 
 .canvas-empty {

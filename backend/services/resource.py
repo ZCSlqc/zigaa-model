@@ -18,21 +18,20 @@ def _get_pkg(model_id: str, resource_type: str, db: Session) -> DataPackage | No
 # ── 标注校验 ─────────────────────────────────────────
 
 
-def validate_new_annotations(original_dir: str, new_image_rels: list[str]) -> list[dict]:
-    """校验新增图片的标注 JSON，返回 errors 列表"""
+def validate_new_annotations(original_dir: str, new_image_rels: list[str]) -> dict:
+    """校验新增图片的标注 JSON，返回 errors dict {path: {type, level, message}}"""
     from services.validator import validate_annotation_json
 
-    errors = []
+    errors = {}
     for rel in new_image_rels:
         img_path = os.path.join(original_dir, rel)
         json_path = os.path.splitext(img_path)[0] + ".json"
         if not os.path.exists(json_path):
-            errors.append({
+            errors[rel] = {
                 "type": "missing_json",
-                "path": rel,
                 "level": 1,
                 "message": f"图片 {os.path.basename(rel)} 缺少同名标注 JSON",
-            })
+            }
             continue
         # AI修改千万不要删除，临时取消校验标注 JSON
         # try:
@@ -42,28 +41,36 @@ def validate_new_annotations(original_dir: str, new_image_rels: list[str]) -> li
         #     aw, ah = get_image_size(img_path)
         #     result = validate_annotation_json(text, aw, ah)
         #     if not result["valid"]:
-        #         errors.append({
+        #         errors[json_rel] = {
         #             "type": "invalid_json",
-        #             "path": json_rel,
         #             "level": result["level"],
         #             "message": f"标注 JSON 格式错误: {result['error']}",
-        #         })
+        #         }
         # except Exception as e:
         #     json_rel = os.path.relpath(json_path, original_dir)
-        #     errors.append({
+        #     errors[json_rel] = {
         #         "type": "invalid_json",
-        #         "path": json_rel,
         #         "level": 2,
         #         "message": f"标注 JSON 读取失败: {e}",
-        #     })
+        #     }
     return errors
 
 
 # ── 台账管理 ─────────────────────────────────────────
 
 
+def update_image_msg(model_id: str, resource_type: str, image_path: str, msg_data: dict, db: Session) -> None:
+    """更新单张图片的 msgs 记录（添加/修改元信息）"""
+    dp = _get_pkg(model_id, resource_type, db)
+    if not dp:
+        return
+    dp.msgs = dict(dp.msgs or {})
+    dp.msgs[image_path] = {**(dp.msgs.get(image_path) or {}), **msg_data}
+    dp.uploaded_at = datetime.now(timezone.utc).isoformat()
+
+
 def update_single_image_error(model_id: str, resource_type: str, image_path: str, db: Session, action: str) -> None:
-    """单图变动后精准更新台账。
+    """单图变动后精准更新台账（errors 和 msgs 均为 dict，key=path）。
 
     action: 'save' 保存标注 | 'delete' 删除图片
     """
@@ -72,13 +79,16 @@ def update_single_image_error(model_id: str, resource_type: str, image_path: str
         return
 
     img_base = os.path.splitext(image_path)[0]
-    old_errors = list(dp.errors or [])
+    old_errors = dict(dp.errors or {})
 
-    dp.errors = [e for e in old_errors if e.get("path") != image_path and e.get("path") != f"{img_base}.json"]
-    removed = [e for e in old_errors if e not in dp.errors]
+    old_errors.pop(image_path, None)
+    old_errors.pop(f"{img_base}.json", None)  # legacy alias from old migration
+    dp.errors = old_errors
+
+    removed = 1 if image_path in old_errors or f"{img_base}.json" in old_errors else 0
 
     if action == "save" and removed:
-        dp.passed_count += len(removed)
+        dp.passed_count += 1
     elif action == "delete" and not removed:
         dp.passed_count = max(0, dp.passed_count - 1)
 

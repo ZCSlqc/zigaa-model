@@ -59,16 +59,29 @@ def get_image_size(image_path: str) -> tuple:
         return 0, 0
 
 
-def _process_image_worker(args: tuple) -> tuple[str, str | None]:
-    """Worker function — uses OpenCV for faster image processing"""
+def _process_image_worker(args: tuple) -> tuple[str, str | None, dict | None]:
+    """Worker function — uses OpenCV for faster image processing.
+
+    Returns: (rel_path, error_message | None, msg_entry | None)
+    msg_entry contains {width, height, channels} for the image.
+    """
     model_id, resource_type, rel_path, orig_path = args
     out_name = os.path.splitext(rel_path)[0] + ".jpg"
     resource_dir = os.path.join(UPLOAD_DIR, model_id, resource_type)
 
     try:
-        img = cv2.imread(orig_path, cv2.IMREAD_COLOR)
-        if img is None:
-            return (rel_path, "failed to decode image")
+        raw = cv2.imread(orig_path, cv2.IMREAD_UNCHANGED)
+        if raw is None:
+            return (rel_path, "failed to decode image", None)
+
+        # Get original dimensions and channels before any resize
+        h, w = raw.shape[:2]
+        channels = raw.shape[2] if len(raw.shape) == 3 else 1
+
+        msg_entry = {"width": w, "height": h, "channels": channels}
+
+        # Convert to 3-channel for compress/preview
+        img = cv2.cvtColor(raw, cv2.COLOR_BGR2RGB) if channels == 3 else cv2.cvtColor(raw, cv2.COLOR_GRAY2RGB)
 
         # preview: original size q95 JPEG
         preview_path = os.path.join(resource_dir, "preview", out_name)
@@ -76,7 +89,6 @@ def _process_image_worker(args: tuple) -> tuple[str, str | None]:
         cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tofile(preview_path)
 
         # compress: 400px q60 JPEG
-        h, w = img.shape[:2]
         if max(w, h) > 400:
             scale = 400 / max(w, h)
             img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
@@ -85,25 +97,32 @@ def _process_image_worker(args: tuple) -> tuple[str, str | None]:
         os.makedirs(os.path.dirname(compress_path), exist_ok=True)
         cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 60])[1].tofile(compress_path)
 
-        return (rel_path, None)
+        return (rel_path, None, msg_entry)
     except Exception as e:
-        return (rel_path, str(e))
+        return (rel_path, str(e), None)
 
 
-def process_images_parallel(model_id: str, resource_type: str, original_dir: str, image_list: list[tuple[str, str]]) -> list[dict]:
-    """多线程并行处理图片（OpenCV 释放 GIL），返回 errors 列表"""
+def process_images_parallel(model_id: str, resource_type: str, original_dir: str, image_list: list[tuple[str, str]]) -> tuple[list[dict], dict]:
+    """多线程并行处理图片（OpenCV 释放 GIL），返回 (errors_dict, msgs_dict)。
+
+    errors_dict: {path: {type, message}} 处理出错的图片
+    msgs_dict: {path: {width, height, channels}} 成功处理的图片元信息
+    """
     if not image_list:
-        return []
+        return [], {}
 
     from concurrent.futures import ThreadPoolExecutor
 
     args = [(model_id, resource_type, rel, os.path.join(original_dir, rel)) for rel, _ in image_list]
     max_workers = min(4, os.cpu_count() or 4)
-    errors = []
+    errors = {}
+    msgs = {}
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        for rel_path, err in pool.map(_process_image_worker, args):
+        for rel_path, err, msg_entry in pool.map(_process_image_worker, args):
             if err:
-                errors.append({"type": "process_error", "path": rel_path, "message": err})
+                errors[rel_path] = {"type": "process_error", "message": err}
+            elif msg_entry:
+                msgs[rel_path] = msg_entry
 
-    return errors
+    return errors, msgs

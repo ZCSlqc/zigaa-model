@@ -93,7 +93,7 @@ interface UploadFileItem {
   progress: number
   totalChunks: number
   completedChunks: number
-  result?: { passed_count: number; failed_count: number; errors: any[] }
+  result?: { passed_count: number; failed_count: number; errors: any; msgs: any }
   error?: string
   pollTimer?: ReturnType<typeof setInterval>
   countdownTimer?: ReturnType<typeof setInterval>

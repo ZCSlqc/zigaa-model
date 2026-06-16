@@ -225,7 +225,8 @@ def get_model(model_id: str, db: Session = Depends(get_db), user: dict = Depends
             "resource_type": pkg.resource_type,
             "passed_count": pkg.passed_count,
             "failed_count": pkg.failed_count,
-            "errors": pkg.errors or [],
+            "errors": pkg.errors or {},
+            "msgs": pkg.msgs or {},
             "uploaded_at": pkg.uploaded_at,
         }
         for pkg in packages

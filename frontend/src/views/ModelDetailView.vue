@@ -59,7 +59,7 @@
               <span v-if="!goodLoaded" class="empty-text">暂无数据</span>
               <template v-else>
                 <el-tag
-                  v-if="goodErrors.length === 0"
+                  v-if="Object.keys(goodErrors).length === 0"
                   type="success"
                   size="small"
                 >
@@ -120,7 +120,7 @@
               <span v-if="!defectLoaded" class="empty-text">暂无数据</span>
               <template v-else>
                 <el-tag
-                  v-if="defectErrors.length === 0"
+                  v-if="Object.keys(defectErrors).length === 0"
                   type="success"
                   size="small"
                 >
@@ -384,12 +384,12 @@ const zipDialogTitle = computed(() => {
 const goodLoaded = ref(false);
 const goodPassed = ref(0);
 const goodFailed = ref(0);
-const goodErrors = ref<any[]>([]);
+const goodErrors = ref<any>({});
 
 const defectLoaded = ref(false);
 const defectPassed = ref(0);
 const defectFailed = ref(0);
-const defectErrors = ref<any[]>([]);
+const defectErrors = ref<any>({});
 
 const paramLoaded = ref(false);
 
@@ -425,8 +425,9 @@ const sortedErrors = computed(() => {
 });
 
 function showErrors(type: "good" | "defect" | "test" | "template") {
-  const errorMap: Record<string, any[]> = { good: goodErrors.value, defect: defectErrors.value, test: testErrors.value, template: templateErrors.value };
-  currentErrors.value = errorMap[type] || [];
+  const errorDicts: Record<string, any> = { good: goodErrors.value, defect: defectErrors.value, test: testErrors.value, template: templateErrors.value };
+  const dict = errorDicts[type] || {};
+  currentErrors.value = Object.entries(dict).map(([path, entry]: [string, any]) => ({ path, type: entry.type || 'error', message: entry.message, level: entry.level }));
   showErrorDialog.value = true;
 }
 
@@ -458,20 +459,20 @@ async function fetchModel() {
     goodLoaded.value = false;
     goodPassed.value = 0;
     goodFailed.value = 0;
-    goodErrors.value = [];
+    goodErrors.value = {};
     defectLoaded.value = false;
     defectPassed.value = 0;
     defectFailed.value = 0;
-    defectErrors.value = [];
+    defectErrors.value = {};
     paramLoaded.value = false;
     testLoaded.value = false;
     testPassed.value = 0;
     testFailed.value = 0;
-    testErrors.value = [];
+    testErrors.value = {};
     templateLoaded.value = false;
     templatePassed.value = 0;
     templateFailed.value = 0;
-    templateErrors.value = [];
+    templateErrors.value = {};
 
     // 填充
     const good = pkgs.find((p: any) => p.resource_type === "good");
@@ -484,13 +485,13 @@ async function fetchModel() {
       goodLoaded.value = true;
       goodPassed.value = good.passed_count || 0;
       goodFailed.value = good.failed_count || 0;
-      goodErrors.value = good.errors || [];
+      goodErrors.value = good.errors || {};
     }
     if (defect) {
       defectLoaded.value = true;
       defectPassed.value = defect.passed_count || 0;
       defectFailed.value = defect.failed_count || 0;
-      defectErrors.value = defect.errors || [];
+      defectErrors.value = defect.errors || {};
     }
     if (param) {
       paramLoaded.value = true;
@@ -499,13 +500,13 @@ async function fetchModel() {
       testLoaded.value = true;
       testPassed.value = test.passed_count || 0;
       testFailed.value = test.failed_count || 0;
-      testErrors.value = test.errors || [];
+      testErrors.value = test.errors || {};
     }
     if (template) {
       templateLoaded.value = true;
       templatePassed.value = template.passed_count || 0;
       templateFailed.value = template.failed_count || 0;
-      templateErrors.value = template.errors || [];
+      templateErrors.value = template.errors || {};
     }
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || "加载模型失败");
@@ -544,8 +545,13 @@ function handleZipUploaded(result: any) {
       u.loaded.value = true;
       u.passed.value += result.passed_count || 0;
       u.failed.value += result.failed_count || 0;
-      if (result.errors?.length) {
-        u.errors.value = [...u.errors.value, ...result.errors];
+      // Merge errors dict
+      if (result.errors) {
+        u.errors.value = { ...u.errors.value, ...result.errors };
+      }
+      // Merge msgs dict
+      if (result.msgs) {
+        // Not stored locally, but tree will reload on next loadModel call
       }
     }
   }

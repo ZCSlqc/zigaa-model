@@ -73,7 +73,8 @@ class DataPackage(Base):
     file_path = Column(String(500), nullable=False)
     passed_count = Column(Integer, default=0)
     failed_count = Column(Integer, default=0)
-    errors = Column(JSON, default=list)
+    errors = Column(JSON, default=dict)
+    msgs = Column(JSON, default=dict)
     created_at = Column(String(32), default=now_iso)
     uploaded_at = Column(String(32), default=now_iso)
 
