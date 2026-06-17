@@ -47,7 +47,7 @@
           <span class="dot" /> 无标记
         </div>
         <div class="popup-option" :class="{ active: store.categoryFilter === 'undone' }" @click="setCategory('undone')">
-          <span class="dot undone" /> 未标注
+          <span class="dot undone" /> 未标完
         </div>
         <div class="popup-option" :class="{ active: store.categoryFilter === 'pending' }" @click="setCategory('pending')">
           <span class="dot pending" /> 待确认

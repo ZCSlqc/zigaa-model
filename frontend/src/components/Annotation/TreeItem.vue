@@ -24,7 +24,7 @@
     >
       <el-icon class="file-icon"><Picture /></el-icon>
       <span class="label">{{ node.name }}</span>
-      <el-tag v-if="fileNode?.category === 'undone'" size="small" type="warning" class="cat-tag">未标注</el-tag>
+      <el-tag v-if="fileNode?.category === 'undone'" size="small" type="warning" class="cat-tag">未标完</el-tag>
       <el-tag v-else-if="fileNode?.category === 'pending'" size="small" type="primary" class="cat-tag">待确认</el-tag>
       <el-tag v-if="fileNode?.has_annotation && !fileNode?.error" size="small" type="success" class="ann-tag">✓</el-tag>
       <el-tooltip v-else-if="fileNode?.error" :content="tooltipContent" placement="top" :show-after="200" raw-content>

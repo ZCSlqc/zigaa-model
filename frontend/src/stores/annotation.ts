@@ -192,7 +192,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
           const backendError = errorMap.get(relPath) || errorMap.get(`${relPath.replace(/\.(jpg|jpeg|png)$/, '.json')}`)
           const msgEntry = msgsMap.get(relPath) || msgsMap.get(`${relPath.replace(/\.(jpg|jpeg|png)$/, '.json')}`)
 
-          const category = msgEntry?.category && msgEntry.category !== '' ? msgEntry.category as 'none' | 'undone' | 'pending' : undefined
+          const category: 'none' | 'undone' | 'pending' = msgEntry?.category && msgEntry.category !== '' ? msgEntry.category as 'none' | 'undone' | 'pending' : 'none'
 
           return {
             name: node.name, size: node.size, path: node.path,
