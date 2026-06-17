@@ -18,7 +18,9 @@ for f in "$BACKEND_PID" "$FRONTEND_PID"; do
 done
 
 # 强制清理残留进程（防止僵尸进程堆积）
-pkill -f "uvicorn main:app.*8111" 2>/dev/null || true
+BACKEND_PORT="${BACKEND_PORT:-8111}"
+BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
+pkill -f "uvicorn main:app.*${BACKEND_PORT}" 2>/dev/null || true
 pkill -f "vite.*--port 3" 2>/dev/null || true
 
 sleep 1
@@ -30,12 +32,12 @@ echo "🚀 启动中..."
 # 后端
 PROJECT_ROOT="$(pwd)"
 cd backend
-$PROJECT_ROOT/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8111 --reload > "$BACKEND_LOG" 2>&1 &
+$PROJECT_ROOT/.venv/bin/python -m uvicorn main:app --host "${BACKEND_HOST:-0.0.0.0}" --port "${BACKEND_PORT:-8111}" --reload > "$BACKEND_LOG" 2>&1 &
 echo $! > "$BACKEND_PID"
 cd ..
 
-for i in $(seq 1 15); do sleep 1; curl -s http://localhost:8111/docs >/dev/null 2>&1 && break; done
-if ! curl -s http://localhost:8111/docs >/dev/null 2>&1; then
+for i in $(seq 1 15); do sleep 1; curl -s "http://localhost:${BACKEND_PORT}/docs" >/dev/null 2>&1 && break; done
+if ! curl -s "http://localhost:${BACKEND_PORT}/docs" >/dev/null 2>&1; then
   echo "❌ 后端启动失败"; cat "$BACKEND_LOG"; exit 1
 fi
 echo "✅ 后端 $(cat "$BACKEND_PID")"

@@ -168,7 +168,7 @@ function expandAll() {
 }
 
 function collapseAll() { expandedFolders.value = new Set() }
-function selectImage(img: any) { store.selectImage(img) }
+function selectImage(img: TreeFile) { store.selectImage(img) }
 
 async function confirmDeleteFolder(folderPath: string) {
   const folderName = folderPath.split('/').pop() || folderPath

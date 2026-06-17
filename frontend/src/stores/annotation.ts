@@ -54,24 +54,22 @@ export const useAnnotationStore = defineStore('annotation', () => {
 
   // ── displayTree: 每次筛选时从 sourceTree 浅过滤生成的视图 ──
 
+  function filterTreeByCategory(nodes: TreeNode[], category: string): TreeNode[] {
+    return nodes.flatMap(node => {
+      if (isFolder(node)) {
+        const filteredChildren = filterTreeByCategory(node.children, category)
+        return filteredChildren.length > 0 ? [{ ...node, children: filteredChildren }] : []
+      }
+      return (node as TreeFile).category === category ? [node] : []
+    })
+  }
+
   const displayTree = computed(() => {
     const filter = categoryFilter.value
     if (!filter) return sourceTree.value
-
-    // Recursively filter: keep folder only if it has matching children
-    const filterNode = (nodes: TreeNode[]): TreeNode[] => {
-      return nodes.flatMap(node => {
-        if (isFolder(node)) {
-          const filteredChildren = filterNode(node.children)
-          return filteredChildren.length > 0 ? [{ ...node, children: filteredChildren }] : []
-        }
-        return (node as TreeFile).category === filter ? [node] : []
-      })
-    }
-
     return sourceTree.value.map(folder => ({
       ...folder,
-      children: filterNode(folder.children),
+      children: filterTreeByCategory(folder.children, filter),
     })).filter((f: TreeNode) => f.children.length > 0) as TreeFolder[]
   })
 
@@ -343,14 +341,13 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const _emptyFolders: string[] = []
   function getEmptyFolders(): string[] { const e = _emptyFolders.slice(); _emptyFolders.length = 0; return e }
 
-  async function updateImageMsgFn(path: string, category: string) {
+  async function updateImageMsgFn(path: string, category: 'none' | 'undone' | 'pending') {
     try {
       await updateImageMsg(modelId.value, resourceType.value, path, { category })
-      const cat = category as 'none' | 'undone' | 'pending'
       const found = findNode(path)
       if (found) {
-        found.category = cat
-        updateDisplayTreeAfterCategoryChange(path, cat)
+        found.category = category
+        updateDisplayTreeAfterCategoryChange(path, category)
         // Don't reassign currentImage — let the
         // caller (setCategory / ImagePanel) handle clearing or switching.
       }

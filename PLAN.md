@@ -1,7 +1,7 @@
 # Zigaa 大模型云平台 — 实施规划
 
 > 工业缺陷检测平台的数据管理 Web 应用 + 本地模型训练
-> 创建于 2026-05-13 | 最后更新 2026-06-17
+> 创建于 2026-05-13 | 最后更新 2026-06-18
 
 ## 一、项目概述
 
@@ -17,7 +17,13 @@
 | 包管理 | uv（后端）+ npm（前端） |
 | 数据库 | MySQL zigaa_platform utf8mb4 |
 
-端口: 后端 8111 / 前端 3111
+端口: 后端 8111 / 前端 3111（通过 `.env` 配置 `BACKEND_HOST`/`BACKEND_PORT`/`VITE_BACKEND_URL`，可自定义）
+
+## 配置
+
+- `.env` 统一配置端口和地址：`BACKEND_HOST`、`BACKEND_PORT`、`VITE_BACKEND_URL`
+- `start.sh` 和 `vite.config.ts` 均从上述环境变量读取，改一处生效
+- CORS `allow_origins=["*"]`（全来源开放，`allow_credentials` 自动切 `False`）
 
 ## 三、已实现功能
 
@@ -114,6 +120,8 @@
 - 下载组件（components/Download/DownloadDialog，进度弹窗 + 速度/ETA）
 - 后端大文件日志（ZIP 上传/下载/传输耗时分段记录）
 - 后端健壮性修复：ZIP 软链接穿越、分片清理检查 uploading、磁盘检查日志、index 路径 normpath
+- 配置集中化：`.env` 统一端口/地址，`start.sh`/`vite.config.ts`/`config.py` 均从环境变量读取，CORS 全来源开放
+- Bug 修复：`annotation.ts` 中 `updateImageMsgFn` 变量名 `cat` → `category`（拼写错误导致本地状态更新为 `undefined`）
 
 ## 四、数据模型
 

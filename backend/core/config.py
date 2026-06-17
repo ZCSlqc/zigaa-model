@@ -30,11 +30,10 @@ else:
 TRAINING_DIR = os.environ.get("TRAINING_DIR", os.path.join(BASE_DIR, "training"))
 CLEANUP_STALE_HOURS = int(os.environ.get("CLEANUP_STALE_HOURS", "48"))
 
-CORS_HOST = os.environ.get("CORS_HOST", "")
-CORS_PORT = os.environ.get("CORS_PORT", "3111")
-_cors_origins = ["http://localhost:" + CORS_PORT, "http://127.0.0.1:" + CORS_PORT]
-if CORS_HOST:
-    _cors_origins.append("http://" + CORS_HOST + ":" + CORS_PORT)
-CORS_ORIGINS = _cors_origins
+BACKEND_HOST = os.environ.get("BACKEND_HOST", "127.0.0.1")
+BACKEND_PORT = int(os.environ.get("BACKEND_PORT", "8111"))
+
+# CORS: 仅允许 localhost / 127.0.0.1（前端通过 Vite proxy /api 转发，同机访问）
+CORS_ORIGINS = ["*"]
 
 SUPPORTED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}

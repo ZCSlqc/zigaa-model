@@ -162,8 +162,6 @@
                 />
               </template>
 
-
-
               <!-- 正在绘制中的线段 -->
               <v-line
                 v-if="drawingPoints.length > 1"
@@ -937,8 +935,6 @@ function toPathLinePoints(pts: Array<{ x: number; y: number }>): number[] {
   return all.flatMap(p => [p.x, p.y])
 }
 
-
-
 /**
  * Mutually exclusive hover: vertex > edge.
  * Check vertices first; if any vertex is hovered, edges are ignored.
@@ -996,7 +992,6 @@ function labelWidthPx(entry: { labelname: string; label: number }): number {
   const text = entry.labelname || `${entry.label}`
   return (text.length * 7 + 8) / scale.value
 }
-
 
 function startEditLabel(origIdx: number) {
   const entry = store.annotationData?.va?.[origIdx]
