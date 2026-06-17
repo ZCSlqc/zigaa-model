@@ -5,6 +5,7 @@
         @back="router.push(`/model/${modelId}`)"
         :mode="mode"
         :has-polygons="currentEntries.length > 0"
+        :has-changes="!!store.annotationData && JSON.stringify(store.annotationData) !== JSON.stringify(store.savedSnapshot)"
         :resource-type="store.resourceType as 'good' | 'defect'"
         :show-labels="showLabels"
         :show-edges="showEdges"
@@ -218,8 +219,8 @@
           <span class="label-dialog-text">新建标注</span>
           <el-input v-model="labelDialogInput" placeholder="输入标签名称" @keyup.enter="confirmLabelDialog" />
         </div>
-        <div class="label-dialog-buttons" v-if="labelHistory.length > 0">
-          <el-button v-for="(l, i) in labelHistory" :key="l" size="small" class="label-history-btn" @click="selectLabel(l)" @contextmenu.prevent="removeLabelHistory(i)">{{ l }}</el-button>
+        <div class="label-dialog-buttons" v-if="store.labelHistory.length > 0">
+          <el-button v-for="(l, i) in store.labelHistory" :key="l" size="small" class="label-history-btn" @click="selectLabel(l)" @contextmenu.prevent="removeLabelHistory(i)">{{ l }}</el-button>
         </div>
         <template #footer>
           <div class="label-dialog-footer">
@@ -346,7 +347,6 @@ const shiftKey = ref(false)
 const showLabelDialog = ref(false)
 const labelDialogTitle = ref('添加标注')
 const labelDialogInput = ref('')
-const labelHistory = ref<string[]>([]) // previously used label names
 let labelDialogCallback: ((name: string | null) => void) | null = null
 let labelDialogPending = false // whether drawing is waiting for label input
 
@@ -356,13 +356,13 @@ function openLabelDialog(title: string, defaultName: string, callback: (name: st
   labelDialogPending = true
   if (store.annotationData?.va) {
     for (const entry of store.annotationData.va) {
-      const name = entry.labelname
-      if (name && !labelHistory.value.includes(name)) {
-        labelHistory.value.push(name)
-      }
+      // labelname 优先，没有就用 label 本身（后端存的标签名）
+      const name = entry.labelname || entry.label
+      if (String(name).trim()) store.addLabelToHistory(String(name).trim())
     }
   }
-  labelDialogInput.value = labelHistory.value.length > 0 ? labelHistory.value[0] : defaultName || 'label_1'
+  // 展示当前标注已有的标签名，再展示历史
+  labelDialogInput.value = store.labelHistory.length > 0 ? store.labelHistory[0] : (defaultName || 'label_1')
   showLabelDialog.value = true
 }
 
@@ -388,17 +388,13 @@ function selectLabel(name: string) {
 }
 
 function removeLabelHistory(idx: number) {
-  const name = labelHistory.value[idx]
-  if (name) {
-    labelHistory.value.splice(idx, 1)
-  }
+  const name = store.labelHistory[idx]
+  if (name) store.removeLabelFromHistory(name)
 }
 
 function confirmLabelDialog() {
   const name = labelDialogInput.value.trim() || null
-  if (name && !labelHistory.value.includes(name)) {
-    labelHistory.value.push(name)
-  }
+  if (name) store.addLabelToHistory(name)
   // Save data and reset drawing state immediately
   if (labelDialogCallback) labelDialogCallback(name)
   labelDialogCallback = null
@@ -660,9 +656,17 @@ function handleStageMouseDown(e: any) {
       return
     }
 
-    if (hoveredPointIdx.value === 0 && drawingPoints.value.length >= 3) {
-      finishPolygon()
-      return
+    // Click on first point → close polygon (independent of hoveredPointIdx
+    // which may be stale if mouse didn't move over the first point)
+    if (drawingPoints.value.length >= 3) {
+      const first = drawingPoints.value[0]
+      const dx = pt.x - first.x
+      const dy = pt.y - first.y
+      const r = (HIT_RADIUS * 2) / scale.value
+      if (dx * dx + dy * dy < r * r) {
+        finishPolygon()
+        return
+      }
     }
 
     isDrawingDrag.value = false

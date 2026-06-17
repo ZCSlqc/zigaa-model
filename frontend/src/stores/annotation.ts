@@ -52,6 +52,19 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const annotationLoading = ref(false)
   const categoryFilter = ref<string | undefined>(undefined)
 
+  // ── 标注历史 label（跨图片切换持久化，最近 10 个） ──
+  const labelHistory = ref<string[]>([])
+  function addLabelToHistory(name: string) {
+    const i = labelHistory.value.indexOf(name)
+    if (i >= 0) labelHistory.value.splice(i, 1)
+    labelHistory.value.unshift(name)
+    if (labelHistory.value.length > 10) labelHistory.value.pop()
+  }
+  function removeLabelFromHistory(name: string) {
+    const i = labelHistory.value.indexOf(name)
+    if (i >= 0) labelHistory.value.splice(i, 1)
+  }
+
   // ── displayTree: 每次筛选时从 sourceTree 浅过滤生成的视图 ──
 
   function filterTreeByCategory(nodes: TreeNode[], category: string): TreeNode[] {
@@ -478,5 +491,6 @@ export const useAnnotationStore = defineStore('annotation', () => {
     scheduleAutoSave,
     getMode: () => _mode.value,
     setMode,
+    labelHistory, addLabelToHistory, removeLabelFromHistory,
   }
 })
