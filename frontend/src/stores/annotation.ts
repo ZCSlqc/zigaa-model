@@ -57,11 +57,21 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const displayTree = computed(() => {
     const filter = categoryFilter.value
     if (!filter) return sourceTree.value
+
+    // Recursively filter: keep folder only if it has matching children
+    const filterNode = (nodes: TreeNode[]): TreeNode[] => {
+      return nodes.flatMap(node => {
+        if (isFolder(node)) {
+          const filteredChildren = filterNode(node.children)
+          return filteredChildren.length > 0 ? [{ ...node, children: filteredChildren }] : []
+        }
+        return (node as TreeFile).category === filter ? [node] : []
+      })
+    }
+
     return sourceTree.value.map(folder => ({
       ...folder,
-      children: folder.children.filter(
-        (n: TreeNode): n is TreeFile => !(isFolder(n) || (n as TreeFile).category !== filter),
-      ),
+      children: filterNode(folder.children),
     })).filter((f: TreeNode) => f.children.length > 0) as TreeFolder[]
   })
 
@@ -231,11 +241,11 @@ export const useAnnotationStore = defineStore('annotation', () => {
   let _pendingSwitch = false
 
   async function selectImage(img: TreeFile) {
+    // Same image already selected — no action needed
+    if (currentImage.value?.path === img.path) return
     // Guard: if a switch is already in progress, wait for it to finish
     // so we don't race between loadImage/loadAnnotation of different images
     if (_pendingSwitch) {
-      // Quick path: if the pending switch is for the same image, just return
-      if (currentImage.value?.path === img.path) return
       // Wait a tick and retry (the watch will have resolved)
       await new Promise(r => setTimeout(r, 50))
       if (_pendingSwitch) return selectImage(img)

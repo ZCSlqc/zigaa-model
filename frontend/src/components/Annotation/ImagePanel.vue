@@ -150,19 +150,24 @@ function scrollIntoSelected() {
 }
 
 function toggleFolder(path: string) {
-  expandedFolders.value.has(path) ? expandedFolders.value.delete(path) : expandedFolders.value.add(path)
+  const ef = expandedFolders.value
+  ef.has(path) ? ef.delete(path) : ef.add(path)
+  // Trigger re-render since Set doesn't trigger reactivity
+  expandedFolders.value = new Set(ef)
   scrollIntoSelected()
 }
 
 function expandAll() {
+  const ef = new Set<string>()
   const walk = (nodes: TreeNode[]) => {
-    for (const n of nodes) if ('children' in n) { expandedFolders.value.add((n as TreeFolder).path); walk((n as TreeFolder).children) }
+    for (const n of nodes) if ('children' in n) { ef.add((n as TreeFolder).path); walk((n as TreeFolder).children) }
   }
   walk(store.sourceTree)
+  expandedFolders.value = ef
   scrollIntoSelected()
 }
 
-function collapseAll() { expandedFolders.value.clear() }
+function collapseAll() { expandedFolders.value = new Set() }
 function selectImage(img: any) { store.selectImage(img) }
 
 async function confirmDeleteFolder(folderPath: string) {
@@ -180,15 +185,21 @@ let treeInitialized = false
 watch(() => store.sourceTree, (newTree) => {
   if (newTree.length > 0 && !treeInitialized) {
     treeInitialized = true
+    const ef = new Set<string>()
     const expandAllFolders = (nodes: TreeNode[]) => {
-      for (const n of nodes) if ('children' in n) { expandedFolders.value.add((n as TreeFolder).path); expandAllFolders((n as TreeFolder).children) }
+      for (const n of nodes) if ('children' in n) { ef.add((n as TreeFolder).path); expandAllFolders((n as TreeFolder).children) }
     }
     expandAllFolders(newTree)
+    expandedFolders.value = ef
   }
 }, { immediate: true })
 
 // Remove deleted folders from expandedFolders
-const folderCb = (paths: string[]) => { for (const p of paths) expandedFolders.value.delete(p) }
+const folderCb = (paths: string[]) => {
+  const ef = new Set(expandedFolders.value)
+  for (const p of paths) ef.delete(p)
+  expandedFolders.value = ef
+}
 const offFolderRemoved = store.onFolderRemoved(folderCb)
 
 // Scroll selected into view on image switch
