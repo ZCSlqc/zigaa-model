@@ -20,10 +20,10 @@
       </el-select>
     </div>
     <div v-if="store.loading" class="loading-text">加载中...</div>
-    <div v-else-if="filteredTree.length === 0" class="empty-text">暂无图片</div>
+    <div v-else-if="store.displayTree.length === 0" class="empty-text">暂无图片</div>
     <div v-else class="image-list" ref="imageListRef">
       <TreeItem
-        v-for="node in filteredTree"
+        v-for="node in store.displayTree"
         :key="node.name"
         :node="node"
         :expanded-folders="expandedFolders"
@@ -60,13 +60,13 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted, nextTick } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { useAnnotationStore, type TreeNode, type TreeFile } from '../../stores/annotation'
+import { useAnnotationStore, type TreeNode, type TreeFile, type TreeFolder } from '../../stores/annotation'
 import TreeItem from './TreeItem.vue'
 
 const store = useAnnotationStore()
 const imageListRef = ref<HTMLElement | null>(null)
 
-// ── Category filter sync ──
+// ── Category filter sync (双向绑定) ──
 
 const currentCategoryFilter = ref<string | undefined>('all')
 watch(currentCategoryFilter, (val) => {
@@ -77,76 +77,27 @@ watch(
   (val) => { currentCategoryFilter.value = val ?? 'all' }
 )
 
-// ── Filtered tree (ref + watch for performance) ──
-
-const filteredTree = ref<TreeNode[]>([])
-
-watch(
-  () => [store.tree, store.categoryFilter] as const,
-  ([newTree, newFilter]) => {
-    if (!newFilter) { filteredTree.value = newTree; return }
-    const cat = newFilter
-    const filterNode = (nodes: TreeNode[]): TreeNode[] => {
-      const result: TreeNode[] = []
-      for (const n of nodes) {
-        if ('children' in n) {
-          const filtered = filterNode(n.children)
-          if (filtered.length > 0) result.push({ ...n, children: filtered })
-        } else if ((n as TreeFile).category === cat) {
-          result.push(n)
-        }
-      }
-      return result
+// If currentImage was filtered out, clear canvas
+watch([() => store.displayTree, () => store.categoryFilter], ([tree]) => {
+  if (store.currentImage) {
+    const match = findFile(tree as TreeNode[], store.currentImage.path)
+    if (!match) {
+      store.currentImage = null
+      store.annotationData = null
     }
-    const filtered = filterNode(newTree)
-    filteredTree.value = filtered
+  }
+})
 
-    // If currentImage was filtered out, clear canvas
-    if (store.currentImage) {
-      const match = findFile(filtered, store.currentImage.path)
-      if (match) {
-        // Keep currentImage but update to match node (preserve channels)
-        store.currentImage = { ...match, channels: store.currentImage.channels }
-      } else {
-        store.currentImage = null
-        store.annotationData = null
-      }
-    }
-  },
-  { deep: false }
-)
-
-// Recursively find a file in filtered tree
+// Recursively find a file in displayTree by path
 function findFile(nodes: TreeNode[], path: string): TreeFile | null {
   for (const n of nodes) {
     if ('children' in n) {
-      const m = findFile(n.children, path)
+      const m = findFile((n as TreeFolder).children, path)
       if (m) return m
     } else if ((n as TreeFile).path === path) return n as TreeFile
   }
   return null
 }
-
-// Remove a matched image from filtered tree when its category changes
-const offCatUpdated = store.onCategoryUpdated((path) => {
-  if (!store.categoryFilter) return
-  const remove = (nodes: TreeNode[]): boolean => {
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      const n = nodes[i]
-      if ('children' in n) {
-        if (remove(n.children)) {
-          if (n.children.length === 0) nodes.splice(i, 1)
-          return true
-        }
-      } else if ((n as TreeFile).original_rel_path === path) {
-        nodes.splice(i, 1)
-        return true
-      }
-    }
-    return false
-  }
-  remove(filteredTree.value)
-})
 
 // ── UI state ──
 
@@ -183,7 +134,9 @@ async function setCategory(category: string | undefined) {
 }
 
 onMounted(() => { document.addEventListener('click', hideCategoryMenu) })
-onUnmounted(() => { document.removeEventListener('click', hideCategoryMenu) })
+onUnmounted(() => {
+  document.removeEventListener('click', hideCategoryMenu)
+})
 
 // ── Tree interaction ──
 
@@ -203,9 +156,9 @@ function toggleFolder(path: string) {
 
 function expandAll() {
   const walk = (nodes: TreeNode[]) => {
-    for (const n of nodes) if ('children' in n) { expandedFolders.value.add(n.path); walk(n.children) }
+    for (const n of nodes) if ('children' in n) { expandedFolders.value.add((n as TreeFolder).path); walk((n as TreeFolder).children) }
   }
-  walk(store.tree)
+  walk(store.sourceTree)
   scrollIntoSelected()
 }
 
@@ -224,13 +177,13 @@ async function confirmDeleteFolder(folderPath: string) {
 
 // Auto-expand on first load
 let treeInitialized = false
-watch(() => store.tree, (newTree) => {
+watch(() => store.sourceTree, (newTree) => {
   if (newTree.length > 0 && !treeInitialized) {
     treeInitialized = true
-    const expandAll = (nodes: TreeNode[]) => {
-      for (const n of nodes) if ('children' in n) { expandedFolders.value.add(n.path); expandAll(n.children) }
+    const expandAllFolders = (nodes: TreeNode[]) => {
+      for (const n of nodes) if ('children' in n) { expandedFolders.value.add((n as TreeFolder).path); expandAllFolders((n as TreeFolder).children) }
     }
-    expandAll(newTree)
+    expandAllFolders(newTree)
   }
 }, { immediate: true })
 

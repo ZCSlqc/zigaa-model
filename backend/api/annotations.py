@@ -218,6 +218,43 @@ def save_annotation(model_id: str, resource_type: str, image_path: str, data: di
     return {"success": True}
 
 
+@router.delete("/{model_id}/{resource_type}/folder/{folder_path:path}")
+def delete_folder(model_id: str, resource_type: str, folder_path: str,
+                  db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """删除文件夹及其下所有内容，同步清理台账"""
+    check_model_owner(model_id, user["user_id"], db)
+
+    resource_dir = get_resource_dir(model_id, resource_type)
+    orig_base = os.path.join(resource_dir, "original")
+
+    orig_folder = os.path.join(orig_base, folder_path)
+    if not os.path.isdir(orig_folder):
+        raise HTTPException(status_code=404, detail="文件夹不存在")
+
+    image_rels = []
+    for root, _dirs, files in os.walk(orig_folder):
+        for fname in files:
+            if is_supported_image(fname):
+                image_rels.append(os.path.relpath(os.path.join(root, fname), orig_base))
+
+    shutil.rmtree(orig_folder)
+
+    for layer in LAYERS:
+        layer_folder = os.path.join(resource_dir, layer, folder_path)
+        if os.path.isdir(layer_folder):
+            shutil.rmtree(layer_folder)
+
+    top_dir = _find_top_empty_dir(orig_folder, orig_base)
+    if top_dir is not None:
+        rel = os.path.relpath(top_dir, orig_base)
+        _sync_rmdir_layers(resource_dir, rel)
+
+    result = _cleanup_and_update_ledger(model_id, resource_type, resource_dir, image_rels, db)
+    db.commit()
+    result["success"] = True
+    return result
+
+
 @router.delete("/{model_id}/{resource_type}/{image_path:path}")
 def delete_image(model_id: str, resource_type: str, image_path: str,
                  db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
@@ -247,49 +284,6 @@ def delete_image(model_id: str, resource_type: str, image_path: str,
     _cleanup_and_update_ledger(model_id, resource_type, resource_dir, [image_path], db)
     db.commit()
     return {"success": True}
-
-
-@router.delete("/{model_id}/{resource_type}/folder/{folder_path:path}")
-def delete_folder(model_id: str, resource_type: str, folder_path: str,
-                  db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    """删除文件夹及其下所有内容，同步清理台账"""
-    check_model_owner(model_id, user["user_id"], db)
-
-    resource_dir = get_resource_dir(model_id, resource_type)
-    original_dir = os.path.join(resource_dir, "original")
-
-    orig_folder = os.path.join(original_dir, folder_path)
-    if not os.path.isdir(orig_folder):
-        raise HTTPException(status_code=404, detail="文件夹不存在")
-
-    # 收集文件夹下所有图片相对路径
-    image_rels = []
-    for root, _dirs, files in os.walk(orig_folder):
-        for fname in files:
-            if is_supported_image(fname):
-                rel = os.path.relpath(os.path.join(root, fname), original_dir)
-                image_rels.append(rel)
-
-    # 物理删除：original
-    shutil.rmtree(orig_folder)
-
-    # compress / preview 同步删除
-    for layer in LAYERS:
-        layer_folder = os.path.join(resource_dir, layer, folder_path)
-        if os.path.isdir(layer_folder):
-            shutil.rmtree(layer_folder)
-
-    # 查找并删除 original 侧连续空目录
-    top_dir = _find_top_empty_dir(orig_folder, original_dir)
-    if top_dir is not None:
-        rel = os.path.relpath(top_dir, original_dir)
-        _sync_rmdir_layers(resource_dir, rel)
-
-    # 台账清理
-    result = _cleanup_and_update_ledger(model_id, resource_type, resource_dir, image_rels, db)
-    db.commit()
-    result["success"] = True
-    return result
 
 
 @router.patch("/{model_id}/{resource_type}/msg/{image_path:path}")

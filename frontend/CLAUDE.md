@@ -31,13 +31,39 @@ npm run build    # vue-tsc → vite build
 - Konva 画布 `v-stage` 以原图尺寸渲染，缩放通过 `scale` 控制
 - HIT_RADIUS = 4px 屏幕像素，检测半径 `4 / scale`
 - 边宽度 `ANNOTATION_EDGE_WIDTH / scale`，顶点半径 `ANNOTATION_VERTEX_RADIUS / scale`（hover `ANNOTATION_VERTEX_HOVER_RADIUS / scale`），边hover `ANNOTATION_EDGE_HOVER_WIDTH / scale`，删除按钮 `ANNOTATION_DELETE_BTN_RADIUS / scale` — 5个参数均在 .env 配置
-- 三种模式: `draw`(crosshair) / `select`(default) / `pan`(move)
-- 撤销: 从服务器重新加载当前图片原始标注 JSON
+- 两种模式: `draw`(crosshair) / `select`(default)；移除 pan 模式，平移由鼠标拖拽实现
+- 撤销: 从 initialSnapshot 恢复 annotationData，而非重新加载服务器
 - 视图状态持久化: 缩放/平移不随图片切换重置，全局保留 `scale`/`panX`/`panY`
 - hover 检测在 select 模式下使用 stage DOM rect 计算鼠标坐标，不受 canvas-title 高度影响
 - Tree 折叠高亮: 从时间戳文件夹起沿路径找第一个折叠的文件夹高亮（蓝色），全展开则高亮图片本身
 - 树列表滚动置顶: 切换图片 / 折叠展开 / 全部展开 / 全部折叠时，高亮节点自动 scrollIntoView({ block: 'start' }) 置顶
 - 图片路径显示: 面板顶部"全部展开/全部折叠"按钮上方显示当前图片 rel_path，最多 2 行，悬停完整路径
+- Tree 架构: sourceTree 为唯一真实数据源，displayTree 为 computed 视图层（`sourceTree.map(folder => {..., children: filter(children)})`），筛选时生成新浅拷贝数组
+- 分类筛选: 面板右侧下拉筛选（全部/未标完/待确认），displayTree 实时过滤，计数联动更新
+- canvas-title 区域: 图片信息（路径/通道/分辨率）+ 分类按钮（默认/未标完/待确认），互斥点击修改当前图片分类
+- 图片外绘制: canvas 内图片外的点自动 clamp 到 `[0, imgW]×[0, imgH]` 边界
+- 键盘左右切换限制在筛选树内，支持循环
+- 路径规范: `path` = URL 路径（显示），`rel_path` = 相对于 original/ 的相对路径（标注操作/删除/文件夹）
+- `category` 始终有值（`none`/`undone`/`pending`），TreeFile 不再用 `original_rel_path`
+
+## 三态保存系统
+
+- `annotationData`: 当前编辑态（用户操作修改的目标对象）
+- `initialSnapshot`: 加载时的副本（`JSON.parse(JSON.stringify(res.data))`），用于撤销恢复
+- `savedSnapshot`: 最后成功保存的副本，`save()` 前比较 `annotationData vs savedSnapshot`，相等则跳过 API 调用
+- `save(isSilent, isAuto)`: `(true,true)`=静默自动保存（切图用），`(false,true)`=带 toast 自动保存，`(true,false)`=静默手动保存，`(false,false)`=带 toast 手动保存
+- 每次成功保存后更新 `savedSnapshot`
+
+## 切图流程
+
+1. `selectImage(newImg)`: ① `save(oldImg)` ② `annotationData=null` ③ `currentImage=newImg`
+2. watch 触发: ④ 清空 drawing 状态 ⑤ `await loadImage()` ⑥ `await store.loadAnnotation(newImg)`
+3. 串行执行，确保先替换底图再加载新标注
+
+## 绘制轮廓保存
+
+- `finishPolygon` 弹出 label 对话框 → 回调中 `va.push()` → `save(true, false)`
+- save 在 push 之后执行（避免保存空数据）
 
 完整标注系统流程见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
 

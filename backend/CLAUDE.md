@@ -50,6 +50,20 @@ uploads 在项目根目录，不在 backend/ 下。路径布局见 [ARCHITECTURE
 
 `app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR))` 提供静态服务。
 
+## 路径规范
+
+- `path`: URL 路径，格式 `/uploads/{model_id}/{resource_type}/original/{rel}`，用于显示/缩略图
+- `rel_path`: 相对于 original/ 的相对路径，如 `timestamp/filename`，用于所有标注操作（保存/删除/文件夹）
+- `build_resource_tree` 同时返回 path 和 rel_path
+- `os.path.join` 行为：参数含绝对路径会丢弃前缀，因此所有文件操作使用相对路径
+
+## 文件夹删除
+
+- 路由定义顺序：`/folder/{path}` 在前，`/{image_path:path}` 在后（避免 `path:path` 贪婪匹配吞掉 `folder/` 前缀）
+- 前端传 rel_path（不含 `/original/` 前缀），后端 `os.path.join(orig_base, folder_path)` 直接拼接
+- 三层同步删除：original（shutil.rmtree）/ compress & preview（存在才删）
+- `_find_top_empty_dir` + `_sync_rmdir_layers` 清理连续空目录
+
 ## ZIP 上传下载
 
 分片上传/下载/异步队列/倒计时/清理流程见 [ARCHITECTURE.md](./ARCHITECTURE.md)。
@@ -58,7 +72,8 @@ uploads 在项目根目录，不在 backend/ 下。路径布局见 [ARCHITECTURE
 - `services/chunk_upload.py` — 分片上传（文件锁 + 原子写入）
 - `services/chunk_download.py` — 分片下载（threading.Lock + 原子写入）
 - `services/zip_queue.py` — 两阶段异步：assemble 线程（拼接+解压+清理）+ worker 队列（per model+type 串行，传 extract_dir）
-- `api/resources.py` — `_process_extracted_dir`（从解压目录复制+图片处理+DB写入）
+- `api/resources.py` — `_process_extracted_dir`（从解压目录复制+图片处理+DB写入，构建 msgs+errors dict）
+- `api/annotations.py` — 单图标注 GET/PUT/DELETE + 文件夹删除 + PATCH msgs。删除使用 `_find_top_empty_dir` 查找连续空目录，original/compress/preview 三端同步清理，`_cleanup_and_update_ledger` 统一处理台账
 - `services/helper.py` — OpenCV 图片并行处理（ThreadPoolExecutor + GIL 释放）
 
 ## 板块规范

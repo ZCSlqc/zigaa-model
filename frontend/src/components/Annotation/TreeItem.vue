@@ -20,7 +20,7 @@
       v-else
       :class="['tree-file', { selected: selectedPath === fileNode?.path }]"
       @click="$emit('selectImage', node as any)"
-      @contextmenu.prevent="$emit('showCategoryMenu', { node: $event, path: fileNode?.original_rel_path || '' })"
+      @contextmenu.prevent="$emit('showCategoryMenu', { node: $event, path: fileNode?.rel_path || '' })"
     >
       <el-icon class="file-icon"><Picture /></el-icon>
       <span class="label">{{ node.name }}</span>

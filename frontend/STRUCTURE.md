@@ -26,7 +26,7 @@ frontend/src/
 │   ├── auth.ts              # 登录/登出/用户信息/改密码
 │   ├── project.ts           # 项目 CRUD
 │   ├── model.ts             # 模型 CRUD + 训练/测试/训练日志/测试日志/轮询 + 模型分片下载
-│   ├── resource.ts          # 分片上传/下载/删除 + 目录树 + 标注 + 参数 + 磁盘检查
+│   ├── resource.ts          # 分片上传/下载/删除 + 目录树 + 标注 + 参数 + 磁盘检查 + 图片 msgs 更新
 │   └── admin.ts             # 管理后台 API
 ├── components/
 │   ├── Layout/
@@ -40,7 +40,7 @@ frontend/src/
 │   ├── Annotation/
 │   │   ├── Toolbar.vue      # 工具栏（模式/保存/删除/资源切换/标签显隐）
 │   │   ├── PreviewToolbar.vue # 预览模式工具栏（只读）
-│   │   ├── ImagePanel.vue   # 左侧面板（目录树 + 图片计数）
+│   │   ├── ImagePanel.vue   # 左侧面板（目录树 + 图片计数 + 分类筛选 + 折叠展开）
 │   │   └── TreeItem.vue     # 递归树节点（文件夹/图片 + 缩略图 + 状态点）
 │   └── Editor/
 │       └── JsonEditor.vue   # JSON 编辑器（CodeMirror 6）
@@ -152,7 +152,16 @@ projects/models/当前项目。CRUD + `trainModel`, `stopTraining`, `getLogs`, `
 
 ### annotation.ts
 
-modelId/resourceType/annotationData/tree/currentImage。`loadModel`, `switchResourceType`, `selectImage`, `save`, `deleteCurrentImage`, `prevImage`, `nextImage`, `onFolderRemoved`。
+modelId/resourceType/annotationData/initialSnapshot/savedSnapshot/sourceTree/displayTree/currentImage。
+
+- `sourceTree`: 唯一真实数据源（TreeFile[]）
+- `displayTree`: computed 视图层，从 sourceTree 浅过滤生成
+- `selectImage(img)`: 先 save(oldImg) → 清空 annotationData → 设 currentImage（watch 中串行 loadImage → loadAnnotation）
+- `save(isSilent, isAuto)`: 三态比较跳过重复保存
+- `loadAnnotation(img)`: 从服务器加载，初始化三态
+- `deleteCurrentImage`/`deleteFolder`: 提取 rel_path 传给后端
+- `setMode(m)`: 仅在 select 模式启动 10s 自动保存定时器
+- `categoryFilter`: 控制 displayTree 过滤，TreeFile.category 始终有值
 
 ## 构建配置
 

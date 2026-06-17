@@ -106,13 +106,15 @@ Index: `idx_model_info_project_id(project_id)`
 | file_path | VARCHAR(500) | NOT NULL | |
 | passed_count | INT | DEFAULT 0 | |
 | failed_count | INT | DEFAULT 0 | |
-| errors | JSON | DEFAULT [] | `[{type, path, level, message}]` |
+| errors | JSON | DEFAULT `{}` | key=path，value={type, level?, message} |
+| msgs   | JSON | DEFAULT `{}` | key=path，value={width, height, channels, category} |
 | created_at | VARCHAR(32) | DEFAULT now_iso | |
 | uploaded_at | VARCHAR(32) | DEFAULT now_iso | |
 
 UniqueConstraint: `uq_model_resource(model_id, resource_type)`
 
-parameter 资源的 passed/failed/errors 全为 0/空数组。test/template 资源的 failed_count = 0。
+parameter 资源的 passed/failed/errors 全为 0/空 dict。test/template 资源的 failed_count = 0。
+errors 和 msgs 均为 dict，key 为图片相对路径。category 默认 undefined（none）。
 
 ## 索引
 

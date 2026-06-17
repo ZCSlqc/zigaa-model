@@ -5,7 +5,6 @@
         @back="router.push(`/model/${modelId}`)"
         :mode="mode"
         :has-polygons="currentEntries.length > 0"
-        :has-changes="hasChanges"
         :resource-type="store.resourceType as 'good' | 'defect'"
         :show-labels="showLabels"
         :show-edges="showEdges"
@@ -15,7 +14,7 @@
         :loading-reset="loadingReset"
         :loading-delete-image="loadingDeleteImage"
         @set-mode="(m) => setMode(m as any)"
-        @delete-all="deleteAll"
+        @delete-all="deleteAnnotation"
         @reset-annotation="resetAnnotation"
         @save="saveAnnotation"
         @switch-resource="onSwitchResource"
@@ -259,21 +258,19 @@ const categoryOptions = [
   { label: '待确认', value: 'pending' },
 ]
 
-const currentCategory = computed(() => store.currentImage?.category || 'none')
+const currentCategory = computed(() => store.currentImage?.category ?? 'none')
 
 async function setCategory(category: string) {
   if (!store.currentImage) return
-  const oldPath = store.currentImage.original_rel_path
+  const oldPath = store.currentImage.rel_path
   const images = store.getFilteredImages(store.categoryFilter)
+  const idx = images.findIndex(i => i.path === store.currentImage!.path)
   await store.updateImageMsg(oldPath, category)
-  // After change
   if (store.categoryFilter) {
     const remaining = store.getFilteredImages(store.categoryFilter)
     if (remaining.length > 0) {
-      const oldIdx = images.findIndex(i => i.path === store.currentImage!.path)
-      store.selectImage(remaining[oldIdx % remaining.length])
+      store.selectImage(remaining[idx % remaining.length])
     } else {
-      // No remaining images — blank canvas
       store.currentImage = null
       store.annotationData = null
     }
@@ -302,7 +299,7 @@ const imgH = ref(0)
 const imageReady = ref(false)
 
 // Drawing state
-const mode = ref<'draw' | 'select' | 'pan'>('draw')
+const mode = ref<'draw' | 'select'>('draw')
 const drawingPoints = ref<Array<{ x: number; y: number }>>([])
 const isDrawing = ref(false)
 const showLabels = ref(true)
@@ -474,34 +471,38 @@ async function loadImage() {
   hoveredPointIdx.value = null
 
   const origPath = store.getPreviewPathByImage(store.currentImage)
-  const img = new window.Image()
-  img.crossOrigin = 'anonymous'
-  img.onload = () => {
-    imgW.value = img.naturalWidth
-    imgH.value = img.naturalHeight
-    bgImage.value = img
-    imageReady.value = true
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new window.Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      imgW.value = img.naturalWidth
+      imgH.value = img.naturalHeight
+      bgImage.value = img
+      imageReady.value = true
 
-    // First image: fit to canvas; subsequent images: keep global scale + pan
-    if (firstLoad) {
-      firstLoad = false
-      const initScale = Math.min(1, (stageWidth.value - 40) / img.naturalWidth, (stageHeight.value - 40) / img.naturalHeight)
-      scale.value = initScale
-      globalScale = initScale
-      centerImage()
-      globalPanX = panX.value
-      globalPanY = panY.value
-    } else {
-      scale.value = globalScale
-      panX.value = globalPanX
-      panY.value = globalPanY
+      // First image: fit to canvas; subsequent images: keep global scale + pan
+      if (firstLoad) {
+        firstLoad = false
+        const initScale = Math.min(1, (stageWidth.value - 40) / img.naturalWidth, (stageHeight.value - 40) / img.naturalHeight)
+        scale.value = initScale
+        globalScale = initScale
+        centerImage()
+        globalPanX = panX.value
+        globalPanY = panY.value
+      } else {
+        scale.value = globalScale
+        panX.value = globalPanX
+        panY.value = globalPanY
+      }
+      resolve(img)
     }
-  }
-  img.onerror = () => {
-    ElMessage.error('图片加载失败')
-    imageReady.value = false
-  }
-  img.src = origPath
+    img.onerror = () => {
+      ElMessage.error('图片加载失败')
+      imageReady.value = false
+      reject(new Error('图片加载失败'))
+    }
+    img.src = origPath
+  })
 }
 
 function linePoints(pts: Array<{ x: number; y: number }>): number[] {
@@ -565,11 +566,6 @@ const currentEntries = computed(() => {
     .filter(Boolean) as Array<{ label: number; labelname: string; pts: Array<{ x: number; y: number }>; _origIdx: number }>
 })
 
-const changedFlag = ref(false)
-function markChanged() { changedFlag.value = true }
-function resetChangeFlag() { changedFlag.value = false }
-const hasChanges = computed(() => changedFlag.value)
-
 function centerImage() {
   panX.value = (stageWidth.value - imgW.value * scale.value) / 2
   panY.value = (stageHeight.value - imgH.value * scale.value) / 2
@@ -591,12 +587,6 @@ function handleStageMouseDown(e: any) {
     lastPos.value = { x: e.evt.clientX - containerRect.left, y: e.evt.clientY - containerRect.top }
     return
   }
-  if (mode.value === 'pan') {
-    isPanning.value = true
-    const containerRect = containerRef.value!.getBoundingClientRect()
-    lastPos.value = { x: e.evt.clientX - containerRect.left, y: e.evt.clientY - containerRect.top }
-    return
-  }
 
   if (mode.value === 'select') {
     const pt = getStagePoint(e)
@@ -608,7 +598,6 @@ function handleStageMouseDown(e: any) {
       if (entry && entry.pts.length > 3) {
         const origIdx = entry._origIdx
         store.annotationData!.va[origIdx].pts.splice(ptIdx, 1)
-        resetChangeFlag()
         hoveredVertex.value = null
         return
       }
@@ -867,9 +856,11 @@ async function finishPolygon(labelname?: string) {
   // Prompt for label name if not provided
   if (!labelname) {
     const defaultName = `label_${nextLabel}`
-    openLabelDialog('添加标注', defaultName, (name) => {
+    openLabelDialog('添加标注', defaultName, async (name) => {
       if (name === null) {
         // cancelled — discard drawing, nothing to do
+        drawingPoints.value = []
+        isDrawing.value = false
         return
       }
       const finalName = name.trim() || defaultName
@@ -878,6 +869,7 @@ async function finishPolygon(labelname?: string) {
         labelname: finalName,
         pts: [...drawingPoints.value],
       })
+      try { await store.save(true, false) } catch { /* silent */ }
     })
     return // callback handles the rest
   }
@@ -887,7 +879,7 @@ async function finishPolygon(labelname?: string) {
     labelname,
     pts: [...drawingPoints.value],
   })
-  markChanged()
+  try { await store.save(true, false) } catch { /* silent */ }
 
   drawingPoints.value = []
   isDrawing.value = false
@@ -997,7 +989,6 @@ function insertPointOnEdge(entryIdx: number, edgeIdx: number, mousePt: { x: numb
   const b = pts[(edgeIdx + 1) % pts.length]
   const newPt = closestOnSeg(mousePt.x, mousePt.y, a.x, a.y, b.x, b.y)
   pts.splice(edgeIdx + 1, 0, newPt)
-  markChanged()
 }
 
 // Approximate label width in image coords (7px per char + 8px tag padding)
@@ -1011,10 +1002,10 @@ function startEditLabel(origIdx: number) {
   const entry = store.annotationData?.va?.[origIdx]
   if (!entry || !entry.pts.length) return
 
-  openLabelDialog('添加标注', entry.labelname || `${entry.label}`, (name) => {
+  openLabelDialog('添加标注', entry.labelname || `${entry.label}`, async (name) => {
     if (name && name.trim()) {
       entry.labelname = name.trim()
-      markChanged()
+      try { await store.save(true, false) } catch { /* silent */ }
     }
   })
 }
@@ -1031,37 +1022,39 @@ function onEntryPointDragMove(e: any, origIdx: number, pointIdx: number) {
 }
 
 function onEntryPointDragEnd(_e: any, _idx: number, _pointIdx: number) {
-  // no-op
+  // no-op — 依赖 10s 定时保存
 }
 
-function deleteEntry(origIdx: number) {
-  if (store.annotationData?.va && store.annotationData.va[origIdx]) {
-    store.annotationData.va.splice(origIdx, 1)
-    markChanged()
-    ElMessage.success('已删除标注')
-  }
+async function deleteEntry(origIdx: number) {
+  if (!store.annotationData?.va || !store.annotationData.va[origIdx]) return
+  store.annotationData.va.splice(origIdx, 1)
+  ElMessage.success('已删除标注')
+  try { await store.save(true, false) } catch { /* silent */ }
 }
 
-function deleteAll() {
-  if (store.annotationData) {
-    store.annotationData.va = []
-    markChanged()
-  }
+async function deleteAnnotation() {
+  if (!store.annotationData) return
+  store.annotationData.va = []
+  try { await store.save(true, false) } catch { /* silent */ }
 }
 
-// Reset: clear current va, reload original JSON
+// Reset: restore snapshot to annotation, then persist to server
 async function resetAnnotation() {
   if (!store.currentImage) return
-  startLoading('reset')
   // Clear current draw state
   drawingPoints.value = []
   isDrawing.value = false
   hoveredPointIdx.value = null
-  // Reload annotation from server
-  await store.loadAnnotation(store.currentImage)
-  resetChangeFlag()
-  stopLoading()
-  ElMessage.success('已撤销修改')
+  // Restore snapshot (初始态，给撤销用)
+  if (store.initialSnapshot) {
+    store.annotationData = JSON.parse(JSON.stringify(store.initialSnapshot))
+    try { await store.save(true, false) } catch { /* silent */ }
+    ElMessage.success('已撤销修改')
+  } else {
+    await store.loadAnnotation(store.currentImage)
+    ElMessage.success('已撤销修改')
+  }
+  store.clearAutoSaveTimers()
 }
 
 async function saveAnnotation() {
@@ -1085,8 +1078,7 @@ async function saveAnnotation() {
 
   startLoading('save')
   try {
-    await store.save()
-    resetChangeFlag()
+    await store.save(false, false)
   } catch (e: any) {
     ElMessage.error(e.message || '保存失败')
   } finally {
@@ -1104,8 +1096,9 @@ function onSwitchResource(type: 'good' | 'defect') {
   store.switchResourceType(type)
 }
 
-function setMode(m: 'draw' | 'select' | 'pan') {
+function setMode(m: 'draw' | 'select') {
   mode.value = m
+  store.setMode(m)
   if (m !== 'draw') {
     isDrawing.value = false
     drawingPoints.value = []
@@ -1114,31 +1107,34 @@ function setMode(m: 'draw' | 'select' | 'pan') {
 }
 
 
-// Watch for image change — full reset
-watch(() => store.currentImage, (newImg, oldImg) => {
-  drawingPoints.value = []
-  isDrawing.value = false
-  hoveredPointIdx.value = null
-  mode.value = 'draw'
-  if (!newImg) {
-    // Clear canvas when no image selected (e.g., switching resource type)
+// Watch for image change — serial load: clear → load image → load annotation
+watch(
+  () => store.currentImage,
+  async (newImg, oldImg) => {
+    // 1. Clear all state
+    drawingPoints.value = []
+    isDrawing.value = false
+    hoveredPointIdx.value = null
+    mode.value = 'draw'
+
+    if (!newImg) {
+      imageReady.value = false
+      bgImage.value = null
+      store.annotationData = null
+      return
+    }
+
+    // 2. Clear canvas, load new image
     imageReady.value = false
     bgImage.value = null
-  } else {
-    // Clear canvas and annotations immediately before loading new image
-    imageReady.value = false
-    if (store.annotationData) store.annotationData.va = []
-    loadImage()
-  }
-})
+    await loadImage()
 
-// Reset change flag when annotation data loads from server
-watch(() => store.annotationData, (newData, oldData) => {
-  // Only on fresh load (when image changes, annotationData goes null → data)
-  if (oldData === null && newData !== null && store.currentImage) {
-    resetChangeFlag()
-  }
-}, { immediate: false })
+    // 3. Load new annotation (image is ready, dims are set)
+    if (newImg) {
+      await store.loadAnnotation(newImg)
+    }
+  },
+)
 
 function handleKeyDown(e: KeyboardEvent) {
   if (e.key === 'Shift') shiftKey.value = true

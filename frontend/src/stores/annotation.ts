@@ -22,7 +22,6 @@ export interface TreeFile {
   path: string
   has_annotation: boolean
   rel_path: string
-  original_rel_path: string
   compress_path?: string
   preview_path?: string
   width?: number
@@ -30,7 +29,7 @@ export interface TreeFile {
   channels?: number // 1=灰度, 3=彩色
   error?: string
   error_level?: number // 1-5 red (critical), 6-9 yellow (warning), 0 = OK
-  category?: 'none' | 'undone' | 'pending' // 用户分类标记
+  category: 'none' | 'undone' | 'pending' // 用户分类标记，始终有值
 }
 
 export interface TreeFolder {
@@ -45,19 +44,57 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const modelId = ref('')
   const resourceType = ref<'good' | 'defect' | 'test' | 'template'>('good')
   const annotationData = ref<AnnotationData | null>(null)
-  const tree = ref<TreeNode[]>([])
+  const initialSnapshot = ref<AnnotationData | null>(null)   // 初始快照（给撤销用）
+  const savedSnapshot = ref<AnnotationData | null>(null)     // 最后保存态（给跳过优化用）
+  const sourceTree = ref<TreeNode[]>([])                     // 唯一真实数据源
   const currentImage = ref<TreeFile | null>(null)
   const loading = ref(false)
   const annotationLoading = ref(false)
   const categoryFilter = ref<string | undefined>(undefined)
 
-  // ── Callbacks for external listeners ──
+  // ── displayTree: 每次筛选时从 sourceTree 浅过滤生成的视图 ──
 
-  const _categoryCallbacks: ((path: string) => void)[] = []
-  function onCategoryUpdated(cb: (path: string) => void) {
-    _categoryCallbacks.push(cb)
-    return () => { const i = _categoryCallbacks.indexOf(cb); if (i >= 0) _categoryCallbacks.splice(i, 1) }
+  const displayTree = computed(() => {
+    const filter = categoryFilter.value
+    if (!filter) return sourceTree.value
+    return sourceTree.value.map(folder => ({
+      ...folder,
+      children: folder.children.filter(
+        (n: TreeNode): n is TreeFile => !(isFolder(n) || (n as TreeFile).category !== filter),
+      ),
+    })).filter((f: TreeNode) => f.children.length > 0) as TreeFolder[]
+  })
+
+  // ── Auto-save ──
+
+  let _globalTimer: ReturnType<typeof setTimeout> | null = null
+  const _mode = ref<'draw' | 'select'>('draw')
+
+  function clearAutoSaveTimers() {
+    if (_globalTimer) { clearTimeout(_globalTimer); _globalTimer = null }
   }
+
+  // Schedule a 10s auto-save timer — only fires in edit mode
+  function scheduleAutoSave(delayMs: number) {
+    clearAutoSaveTimers()
+    _globalTimer = setTimeout(async () => {
+      _globalTimer = null
+      if (_mode.value !== 'select') return  // 仅编辑模式启动
+      if (!annotationData.value || !currentImage.value) return
+      await save(true, true)
+    }, delayMs)
+  }
+
+  function setMode(m: 'draw' | 'select') {
+    _mode.value = m
+    if (m === 'select') {
+      scheduleAutoSave(10000)  // 编辑模式启动 10s 定时
+    } else {
+      clearAutoSaveTimers()  // 非编辑模式清掉
+    }
+  }
+
+  // ── Callbacks for external listeners ──
 
   // ── Tree helpers ──
 
@@ -66,9 +103,18 @@ export const useAnnotationStore = defineStore('annotation', () => {
   }
 
   function extractRelPath(fullPath: string): string {
+    // 从 tree 节点路径中提取相对于 original/ 的相对路径
+    // 格式如：upload/model/type/timestamp/folder/file.jpg → timestamp/folder/file.jpg
     const idx = fullPath.indexOf('/original/')
     if (idx !== -1) return fullPath.slice(idx + 10)
-    return fullPath.replace(/^\/uploads\/[^/]+\/[^/]+\/[^/]+\/(.*?)(\.[^.]+)$/, '$1')
+    // 通用提取：去掉前缀 upload/{model}/{type}/
+    const parts = fullPath.split('/')
+    // 找到 'original' 之后的部分
+    const oi = parts.indexOf('original')
+    if (oi >= 0) return parts.slice(oi + 1).join('/')
+    // 兜底：去掉前缀 'upload/'
+    if (parts[0] === 'upload') return parts.slice(1).join('/')
+    return fullPath
   }
 
   // Flatten tree to all files
@@ -80,7 +126,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
         else images.push(node)
       }
     }
-    walk(tree.value)
+    walk(sourceTree.value)
     return images
   })
 
@@ -90,7 +136,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
     return allImages.value.filter(img => img.category === filter)
   }
 
-  // Find a TreeFile node in tree by path
+  // Find a TreeFile node in sourceTree by path (uses original object reference)
   function findNode(path: string): TreeFile | null {
     const walk = (nodes: TreeNode[]): TreeFile | null => {
       for (const n of nodes) {
@@ -101,7 +147,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
       }
       return null
     }
-    return walk(tree.value)
+    return walk(sourceTree.value)
   }
 
   // ── Async actions ──
@@ -151,7 +197,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
           return {
             name: node.name, size: node.size, path: node.path,
             has_annotation: backendError === undefined,
-            rel_path: relPath, original_rel_path: relPath,
+            rel_path: relPath,
             compress_path: node.compress_path, preview_path: node.preview_path,
             width: msgEntry?.width ?? node.width,
             height: msgEntry?.height ?? node.height,
@@ -162,7 +208,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
         }).filter(Boolean)
       }
 
-      tree.value = buildTree(rawChildren)
+      sourceTree.value = buildTree(rawChildren)
 
       currentImage.value = null
       annotationData.value = null
@@ -181,30 +227,42 @@ export const useAnnotationStore = defineStore('annotation', () => {
     }
   }
 
-  // Cached channel count per image
-  const channelsCache = new Map<string, number>()
+  // Prevent concurrent image switches
+  let _pendingSwitch = false
 
   async function selectImage(img: TreeFile) {
-    const oldChannels = currentImage.value?.channels
-    const cachedCh = channelsCache.get(img.original_rel_path)
-    const channels = cachedCh ?? oldChannels
-    currentImage.value = { ...img, channels }
-    const imageInfo = getImageInfo(modelId.value, resourceType.value, img.original_rel_path).catch(() => null)
-    await loadAnnotation(img)
+    // Guard: if a switch is already in progress, wait for it to finish
+    // so we don't race between loadImage/loadAnnotation of different images
+    if (_pendingSwitch) {
+      // Quick path: if the pending switch is for the same image, just return
+      if (currentImage.value?.path === img.path) return
+      // Wait a tick and retry (the watch will have resolved)
+      await new Promise(r => setTimeout(r, 50))
+      if (_pendingSwitch) return selectImage(img)
+    }
+    _pendingSwitch = true
     try {
-      const res = await imageInfo
-      if (res?.data) {
-        channelsCache.set(img.original_rel_path, res.data.channels)
-        currentImage.value!.channels = res.data.channels
+      // 1. Save old image BEFORE switching (currentImage.value rel_path is the save key)
+      if (currentImage.value && annotationData.value) {
+        try { await save(true, true) } catch { /* silent */ }
       }
-    } catch { /* optional */ }
+      // 2. Clear annotation data
+      annotationData.value = null
+      // 3. Switch image — component's watch handles image + annotation loading
+      currentImage.value = img
+    } finally {
+      _pendingSwitch = false
+    }
   }
 
   async function loadAnnotation(img: TreeFile) {
     annotationLoading.value = true
     try {
-      const res = await getAnnotation(modelId.value, resourceType.value, img.original_rel_path)
+      const res = await getAnnotation(modelId.value, resourceType.value, img.rel_path)
       annotationData.value = res.data
+      const data = JSON.parse(JSON.stringify(res.data))
+      initialSnapshot.value = data
+      savedSnapshot.value = data   // 三态初始化
     } catch (e: any) {
       ElMessage.error(e.response?.data?.detail || '加载标注失败')
     } finally {
@@ -212,18 +270,28 @@ export const useAnnotationStore = defineStore('annotation', () => {
     }
   }
 
-  async function save() {
+  async function save(isSilent = false, isAuto = false) {
     if (!annotationData.value || !currentImage.value) return
+    // Compare with savedSnapshot — skip if unchanged (no toast)
+    if (savedSnapshot.value && JSON.stringify(annotationData.value) === JSON.stringify(savedSnapshot.value)) return
     try {
-      await saveAnnotation(modelId.value, resourceType.value, currentImage.value.original_rel_path, annotationData.value)
-      ElMessage.success('标注已保存')
+      await saveAnnotation(modelId.value, resourceType.value, currentImage.value.rel_path, annotationData.value)
+      if (!isSilent) {
+        if (isAuto) {
+          ElMessage.success('自动保存')
+        } else {
+          ElMessage.success('标注已保存')
+        }
+      }
       currentImage.value.has_annotation = true
       currentImage.value.error = undefined
       currentImage.value.error_level = 0
       updateTreeNodeError(currentImage.value, undefined, 0)
+      // Update savedSnapshot after every successful save
+      savedSnapshot.value = JSON.parse(JSON.stringify(annotationData.value))
+      clearAutoSaveTimers()
     } catch (e: any) {
-      const msg = e.response?.data?.detail || e.message || '保存失败'
-      throw new Error(msg)
+      if (!isSilent) throw new Error(e.response?.data?.detail || e.message || '保存失败')
     }
   }
 
@@ -235,22 +303,47 @@ export const useAnnotationStore = defineStore('annotation', () => {
       }
       return false
     }
-    walk(tree.value)
+    walk(sourceTree.value)
   }
 
   // ── Category update ──
 
+  // Remove non-matching files from displayTree when category changes (filter mode only)
+  // displayTree nodes are same refs as sourceTree — splice only changes the view array
+  function updateDisplayTreeAfterCategoryChange(filePath: string, newCategory: 'none' | 'undone' | 'pending') {
+    const filter = categoryFilter.value
+    if (!filter) return  // "全部"模式 — displayTree = sourceTree，自动反映
+    if (newCategory === filter) return  // 改成了当前筛选值，不需要移除
+
+    // splice out from displayTree's children (folder is original ref, sourceTree already updated)
+    for (const folder of displayTree.value) {
+      const idx = folder.children.findIndex(
+        (n: TreeNode) => !isFolder(n) && (n as TreeFile).rel_path === filePath,
+      )
+      if (idx >= 0) {
+        folder.children.splice(idx, 1)
+        if (folder.children.length === 0) {
+          _emptyFolders.push(folder.path)
+        }
+        break
+      }
+    }
+  }
+
+  const _emptyFolders: string[] = []
+  function getEmptyFolders(): string[] { const e = _emptyFolders.slice(); _emptyFolders.length = 0; return e }
+
   async function updateImageMsgFn(path: string, category: string) {
     try {
       await updateImageMsg(modelId.value, resourceType.value, path, { category })
-      const cat = category === 'none' ? undefined : (category as TreeFile['category'])
+      const cat = category as 'none' | 'undone' | 'pending'
       const found = findNode(path)
       if (found) {
         found.category = cat
-        // Don't reassign currentImage if it points to this node — let the
+        updateDisplayTreeAfterCategoryChange(path, cat)
+        // Don't reassign currentImage — let the
         // caller (setCategory / ImagePanel) handle clearing or switching.
       }
-      _categoryCallbacks.forEach(cb => cb(path))
     } catch (e: any) {
       ElMessage.error(e.response?.data?.detail || '更新标记失败')
     }
@@ -274,7 +367,8 @@ export const useAnnotationStore = defineStore('annotation', () => {
 
   // ── Delete ──
 
-  function removeFileNode(target: TreeFile): string[] {
+  // Remove a file from both sourceTree and displayTree, upward-clean empty folders
+  function removeFileFromTrees(target: TreeFile): string[] {
     const removedFolders: string[] = []
     const walk = (nodes: TreeNode[]): boolean => {
       for (let i = 0; i < nodes.length; i++) {
@@ -288,11 +382,13 @@ export const useAnnotationStore = defineStore('annotation', () => {
       }
       return false
     }
-    walk(tree.value)
+    walk(sourceTree.value)
+    // displayTree is a computed — re-filter will regenerate automatically
     return removedFolders
   }
 
-  function removeFolderNode(folderPath: string): void {
+  // Remove a folder from both trees
+  function removeFolderFromTrees(folderPath: string): void {
     const walk = (nodes: TreeNode[]): boolean => {
       for (let i = 0; i < nodes.length; i++) {
         if (isFolder(nodes[i])) {
@@ -303,16 +399,16 @@ export const useAnnotationStore = defineStore('annotation', () => {
       }
       return false
     }
-    walk(tree.value)
+    walk(sourceTree.value)
   }
 
   async function deleteCurrentImage() {
     if (!currentImage.value) return
     const img = currentImage.value
     try {
-      await deleteImage(modelId.value, resourceType.value, img.original_rel_path)
+      await deleteImage(modelId.value, resourceType.value, img.rel_path)
       ElMessage.success('图片已删除')
-      emitRemovedFolders(removeFileNode(img))
+      emitRemovedFolders(removeFileFromTrees(img))
       currentImage.value = null
       annotationData.value = null
     } catch (e: any) {
@@ -321,12 +417,14 @@ export const useAnnotationStore = defineStore('annotation', () => {
   }
 
   async function deleteFolderFn(folderPath: string) {
+    // 提取相对路径：/uploads/{model}/{type}/original/{rel} → {rel}
+    const idx = folderPath.indexOf('/original/')
+    const relPath = idx !== -1 ? folderPath.slice(idx + 10) : folderPath
     try {
-      const relPath = extractRelPath(folderPath)
       await deleteFolder(modelId.value, resourceType.value, relPath)
       ElMessage.success('文件夹已删除')
-      removeFolderNode(folderPath)
-      if (currentImage.value && currentImage.value.original_rel_path.startsWith(relPath)) {
+      removeFolderFromTrees(folderPath)
+      if (currentImage.value && currentImage.value.path.startsWith(folderPath)) {
         currentImage.value = null
         annotationData.value = null
       }
@@ -360,13 +458,18 @@ export const useAnnotationStore = defineStore('annotation', () => {
   }
 
   return {
-    modelId, resourceType, annotationData, tree, currentImage,
+    modelId, resourceType, annotationData, initialSnapshot, savedSnapshot, sourceTree, displayTree, currentImage,
     loading, annotationLoading, allImages,
     loadModel, switchResourceType, selectImage, loadAnnotation, save,
     deleteCurrentImage, deleteFolder: deleteFolderFn,
     getCompressPathByImage, getPreviewPathByImage, channelLabel,
     getFilteredImages, prevImage, nextImage,
-    onFolderRemoved, onCategoryUpdated, categoryFilter,
+    getEmptyFolders,
+    onFolderRemoved, categoryFilter,
     updateImageMsg: updateImageMsgFn,
+    clearAutoSaveTimers,
+    scheduleAutoSave,
+    getMode: () => _mode.value,
+    setMode,
   }
 })
