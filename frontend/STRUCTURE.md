@@ -170,8 +170,8 @@ modelId/resourceType/annotationData/initialSnapshot/savedSnapshot/sourceTree/dis
 server: {
   port: 3111,
   proxy: {
-    '/api':     { target: 'http://localhost:8111', changeOrigin: true },
-    '/uploads': { target: 'http://localhost:8111', changeOrigin: true },
+    '/api':     { target: VITE_BACKEND_URL || 'http://localhost:8111', changeOrigin: true },
+    '/uploads': { target: VITE_BACKEND_URL || 'http://localhost:8111', changeOrigin: true },
   },
 }
 ```

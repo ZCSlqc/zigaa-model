@@ -37,7 +37,7 @@ npm run build    # vue-tsc → vite build
 - hover 检测在 select 模式下使用 stage DOM rect 计算鼠标坐标，不受 canvas-title 高度影响
 - Tree 折叠高亮: 从时间戳文件夹起沿路径找第一个折叠的文件夹高亮（蓝色），全展开则高亮图片本身
 - 树列表滚动置顶: 切换图片 / 折叠展开 / 全部展开 / 全部折叠时，高亮节点自动 scrollIntoView({ block: 'start' }) 置顶
-- 图片路径显示: 面板顶部"全部展开/全部折叠"按钮上方显示当前图片 rel_path，最多 2 行，悬停完整路径
+- 图片路径显示: 面板顶部"全部展开/全部折叠"按钮上方显示当前图片 rel_path（相对 original/ 的相对路径），最多 2 行，悬停完整路径
 - Tree 架构: sourceTree 为唯一真实数据源，displayTree 为 computed 视图层（`sourceTree.map(folder => {..., children: filter(children)})`），筛选时生成新浅拷贝数组
 - 分类筛选: 面板右侧下拉筛选（全部/未标完/待确认），displayTree 实时过滤，计数联动更新
 - canvas-title 区域: 图片信息（路径/通道/分辨率）+ 分类按钮（默认/未标完/待确认），互斥点击修改当前图片分类

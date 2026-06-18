@@ -63,7 +63,7 @@
 - 标签输入、顶点拖拽、删除图元、撤销（从 initialSnapshot 恢复，而非重新加载）
 - 目录树（递归 TreeItem）+ 标注状态点 + 缩略图
 - 良品/缺陷/测试/模板资源切换
-- 工具栏: 模式切换 / 保存 / 删除标注 / 撤销 / 删除图片 / 标签显隐
+- 工具栏: 模式切换 / 保存 / 删除标注 / 撤销 / 删除图片 / 显示标签-隐藏标签 / 显示轮廓-隐藏轮廓（橙色）/ 良品-缺陷
 - 图片外绘制: canvas 内图片外的点自动 clamp 到 `[0, imgW]×[0, imgH]` 边界
 - select 模式 hover 检测使用 stage DOM rect 计算，不受 canvas-title 高度影响
 - Tree 架构: sourceTree 为唯一真实数据源，displayTree 为 computed 视图层（每次筛选时浅过滤生成），tree 节点为浅拷贝
@@ -72,7 +72,7 @@
 - 键盘左右切换限制在筛选树内，支持循环
 - DataPackage errors 从 list 重构为 dict（key=path），msgs dict 存储图片元信息（width/height/channels/category）
 - 数据库迁移：确保 msgs 列存在，errors list→dict，扫描图片填充 msgs
-- 后端目录树 build_resource_tree 同时返回 path（URL 路径）和 rel_path（相对 original/ 的相对路径），rel_path 用于所有标注操作
+- 后端目录树 build_resource_tree 返回 path（URL 路径），前端从中提取 rel_path（去掉 `/original/` 前缀），rel_path 用于所有标注操作
 - 路径标准：path = URL 路径（用于显示），rel_path = 相对路径（用于标注保存/删除/文件夹操作）
 - 文件夹删除：前端发送 rel_path，后端 os.path.join 直接拼接（original/compress/preview 三层），删除路由定义在 delete_image 之前避免 path:path 贪婪匹配
 - 标注编辑器三态保存：annotationData（当前编辑态）/ initialSnapshot（加载时快照，给撤销用）/ savedSnapshot（最后保存态，跳过优化），save 前比较 annotationData vs savedSnapshot 决定是否调用 API
@@ -88,7 +88,7 @@
 
 - 训练：合并传输+触发，复制到 `TRAINING_DIR/{product_type}/{username}/{model_id}/`，写注册索引 JSON + status.json
 - 测试生成：训练成功后触发，复制 test 数据到训练目录，写注册索引 `{product_type}/test/`
-- 测试预览：test_status 为 success 时，标注 JSON 直接从 `upload_path/log/test/` 读取
+- 测试预览：test_status 为 success 时，标注 JSON 直接从 `upload_path/test/` 读取
 - 读取 `status.json` 并同步到数据库（`VITE_POLL_INTERVAL` 轮询 poll_status，training + test 双状态）
 - 训练/测试终止（写 status.json failure）
 - 模型下载（训练完成后的 model/ 文件夹，分片下载）

@@ -54,7 +54,7 @@ uploads 在项目根目录，不在 backend/ 下。路径布局见 [ARCHITECTURE
 
 - `path`: URL 路径，格式 `/uploads/{model_id}/{resource_type}/original/{rel}`，用于显示/缩略图
 - `rel_path`: 相对于 original/ 的相对路径，如 `timestamp/filename`，用于所有标注操作（保存/删除/文件夹）
-- `build_resource_tree` 同时返回 path 和 rel_path
+- `build_resource_tree` 返回 path（URL 路径），前端从中提取 rel_path（去掉 `/original/` 前缀）
 - `os.path.join` 行为：参数含绝对路径会丢弃前缀，因此所有文件操作使用相对路径
 
 ## 文件夹删除

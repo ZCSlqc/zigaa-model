@@ -290,7 +290,7 @@
 | 接口 | 路径 | 说明 |
 |------|------|------|
 | `GET /{id}/log/training` | `dest_dir/log/training/*.log` | 训练日志，返回最后 100 行 |
-| `GET /{id}/log/test` | `dest_dir/log/test/*.log` | 测试日志，返回最后 100 行，测试 generating 时才可读 |
+| `GET /{id}/log/test` | `dest_dir/log/test/*.log` | 测试日志，返回最后 100 行（generating/success/failure 均可读） |
 
 - 读取 `.log` 文件，`f.readlines()[-100:]` 取最新 100 行
 - 返回 `{"log": "..."}` 纯文本
@@ -465,16 +465,20 @@ uploads/{model_id}/{type}/
 
 **关键机制**：daemon 线程持续消费队列，per model+type 的 `queue.Queue` 确保同一模型不会并发处理。assemble 线程与 worker 队列通过 extract_dir 解耦。
 
-### services/helper.py — 图片处理
+### services/helper.py — 图片处理 + 工具函数
 
-使用 OpenCV（`cv2`）和图片并行处理。
+使用 OpenCV（`cv2`）和图片并行处理 + 用户名/目录名校验。
 
 | 函数 | 职责 |
 |------|------|
+| `sanitize_dir_name()` | 将字符串 sanitize 为安全的文件夹名（过滤 `..`、`/` 等） |
+| `validate_username()` | 严格校验用户名（1-32 字符，字母+数字+下划线+中文） |
 | `is_supported_image()` | 检查文件扩展名是否为支持的图片格式 |
 | `get_image_size()` | 读取图片宽高 |
 | `_process_image_worker()` | 单张图片处理：压缩（最大边 400px）+ 预览（原尺寸 q95） |
 | `process_images_parallel()` | 使用 `ThreadPoolExecutor` 并行处理多张图片（min(4, cpu_count) 线程） |
+
+**常量**：`VALID_ROLES = ("user", "advanced", "admin")`
 
 **关键机制**：OpenCV 释放 GIL，多线程可真正并行。输出写到 `compress/` 和 `preview/` 目录。
 

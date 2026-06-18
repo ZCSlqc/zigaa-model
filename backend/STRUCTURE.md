@@ -17,7 +17,7 @@ backend/
 │   ├── projects.py        # 项目 CRUD（所有者权限）
 │   ├── models.py          # 模型 CRUD + 训练/测试/日志/轮询 + 模型分片下载
 │   ├── resources.py       # ZIP 分片上传/下载/删除 + 参数 JSON + 磁盘检查 + 目录树
-│   ├── annotations.py     # 单图标注 GET/PUT/DELETE + 文件夹删除 + PATCH msgs（rel_path 用于操作，path 用于显示）
+│   ├── annotations.py     # 单图标注 GET/PUT/DELETE + 文件夹删除 + PATCH msgs（path 用于显示，rel_path 由前端从 path 提取后用于操作）
 │   └── admin.py           # 管理后台（用户/项目 CRUD）
 └── services/
     ├── helper.py          # OpenCV 图片处理 + 并行 + 用户名校验 + 路径 sanitization

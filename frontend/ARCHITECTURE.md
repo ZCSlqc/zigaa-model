@@ -85,8 +85,8 @@
 ### HTTP 客户端 (api/client.ts)
 
 - Axios 实例，`baseURL: '/api'`，默认超时 30s
-- 长超时在 API 层指定：`resource.ts` LONG_TIMEOUT = 120s（分片上传/下载 init）
-- 训练/测试在 API 层指定：`model.ts` timeout = 300s（trainModel, runTest）
+- 长超时在 API 层指定：`resource.ts` LONG_TIMEOUT = 1200000ms = 20min（分片上传 chunk / 下载 init）
+- 训练/测试在 API 层指定：`model.ts` timeout = 1200000ms = 20min（trainModel, runTest, downloadModelInit）
 - 请求拦截器：`Authorization: Bearer <token>`
 - 响应拦截器：401 → 清 localStorage → `router.push('/login')`
 - Vite proxy：`/api` → `http://localhost:8111`
@@ -96,8 +96,8 @@
 | 接口 | 超时 |
 |------|------|
 | 普通 CRUD / 标注 / 轮询 | 30s |
-| ZIP `upload-chunk` / `download-init` / `downloadModelInit` | 120s |
-| `trainModel` / `runTest` | 5min |
+| ZIP `upload-chunk` / `download-init` / `downloadModelInit` | 20min |
+| `trainModel` / `runTest` | 20min |
 
 ### 工具层
 
@@ -195,15 +195,8 @@
          │  │ bg image │    │ 全部展开/折叠   │ │
          │  │ v-path   │    │ 高亮自动置顶    │ │
          │  │ v-line   │    └─────────────┘ │ │
-         │  │ v-circle │  三种模式：         │ │
-         │  │ v-label  │  draw/select/pan   │ │
+         │  │ v-label  │  两种模式：         │ │
          │  └──────────┘                     │
-         │  │ bg image │    └─────────────────┘ │
-         │  │ v-path   │                        │
-         │  │ v-line   │  三种模式：             │
-         │  │ v-circle │  draw / select / pan   │
-         │  │ v-label  │                        │
-         │  └──────────┘                        │
          └──────────────────────────────────────┘
                           │
                   annotation.ts (Pinia)
@@ -236,7 +229,6 @@
 |------|------|----------|
 | `draw` | crosshair | 点击添加顶点，悬停最后一点（红）撤回，悬停第一点≥3点（绿）闭合 |
 | `select` | default | 拖拽顶点，Shift+点击删除顶点，点击边插入顶点，点击标签编辑 |
-| `pan` | move | 画布平移 |
 
 - 坐标在**原始图片像素空间**，画布通过 `scale` 缩放
 - HIT_RADIUS = 4px 屏幕像素，`4 / scale` 检测
@@ -246,12 +238,12 @@
 - 绘制灵敏度：`HIT_RADIUS`、`EDGE_HIT_RADIUS`、`DRAW_MIN_IMAGE_DIST`、`DRAW_MIN_SCREEN_DIST` 均通过 `VITE_*` 环境变量配置
 - **Tree 折叠高亮**：从时间戳文件夹起沿路径找第一个折叠的文件夹高亮（蓝色），全展开则高亮图片本身。高亮在 `good/original` 之下生效，不冒泡到注入层
 - **树列表滚动置顶**：切换图片、点击折叠/展开、点击"全部展开/全部折叠"时，高亮节点自动 `scrollIntoView({ block: 'start' })`
-- 撤销：比较 va[] 与 `originalVaSnapshot`
+- 撤销：从 `initialSnapshot` 恢复 `annotationData`
 - 快捷键：Tab 切换模式 / Space 撤回点 / Ctrl+S 保存 / Ctrl+Z 撤销 / ← → 切换图片
 - **显示标签/隐藏标签**：控制多边形标签的显示/隐藏
 - **显示轮廓/隐藏轮廓**（橙色按钮）：控制多边形填充和边的显示/隐藏（顶点、删除按钮、标签不受影响）
-- test/template 资源 → PreviewView 只读渲染（仅 pan + zoom）
-- **画布标题栏**：canvas 顶部显示 `图片路径：xxx | 通道数：N（灰度/彩色） | 分辨率：W×H`。通道数使用 `channelsCache` 缓存（按 `original_rel_path`），切换图片时优先使用旧值/缓存值，请求回来再更新，避免闪烁
+- test/template 资源 → PreviewView 只读渲染（右键平移 + 滚轮缩放）
+- **画布标题栏**：canvas 顶部显示 `图片路径：xxx | 通道数：N（灰度/彩色） | 分辨率：W×H`。通道数来自 msgs 元信息，由后端 `image-info` 端点按需返回
 
 ### 测试预览流程
 
@@ -339,15 +331,14 @@
 
 基于 Konva 的多边形标注编辑器，是前端最复杂的组件。
 
-**工具栏**：返回 / 绘制轮廓 / 编辑选择 / 保存标注 / 删除标注 / 撤销标注 / 删除图片 / 显示标签-隐藏标签 / 显示轮廓-隐藏轮廓（橙色）/ 良品-缺陷
+**工具栏**：返回 / 绘制轮廓 / 编辑/选择 / 保存标注 / 删除标注 / 撤销标注 / 删除图片 / 显示标签-隐藏标签 / 显示轮廓-隐藏轮廓（橙色）/ 良品-缺陷
 
-**三种模式**：
+**两种模式**：
 
 | 模式 | 光标 | 操作 |
 |------|------|------|
 | `draw`（绘制轮廓） | crosshair | 单击加点、长按拖拽连续加点、靠近首点闭合 |
 | `select`（选择编辑） | default/pointer | 拖拽顶点、点击边中点加顶点、Shift+点击删除顶点、删除整个标注 |
-| `pan`（平移) | move | 拖拽移动画布 |
 
 **坐标系统**：
 
