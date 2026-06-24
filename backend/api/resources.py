@@ -134,6 +134,96 @@ def _process_extracted_dir(model_id: str, resource_type: str, extract_dir: str, 
     return {"success": True, "passed_count": new_passed, "failed_count": actual_failed, "errors": new_errors, "msgs": new_msgs}
 
 
+def _process_reprocess(model_id: str, resource_type: str, db: Session) -> dict:
+    """重新扫描 original/ 下的图片，删除旧 compress/preview，重新生成，更新台账。"""
+    logger.info(f"重新入库开始 resource={resource_type} model={model_id}")
+
+    original_dir = os.path.join(get_resource_dir(model_id, resource_type), "original")
+    if not os.path.exists(original_dir):
+        raise HTTPException(status_code=404, detail="资源目录不存在")
+
+    # 删除旧 compress/preview
+    for layer in ("compress", "preview"):
+        layer_dir = os.path.join(get_resource_dir(model_id, resource_type), layer)
+        if os.path.exists(layer_dir):
+            shutil.rmtree(layer_dir)
+        os.makedirs(layer_dir, exist_ok=True)
+
+    # 收集所有图片相对路径
+    all_image_rels = []
+    for root, _dirs, files in os.walk(original_dir, followlinks=False):
+        for fname in files:
+            if is_supported_image(fname):
+                rel = os.path.relpath(os.path.join(root, fname), original_dir)
+                all_image_rels.append(rel)
+
+    if not all_image_rels:
+        # 没有图片：清空台账
+        dp = db.query(DataPackage).filter(
+            DataPackage.model_id == model_id,
+            DataPackage.resource_type == resource_type,
+        ).first()
+        if dp:
+            dp.errors = {}
+            dp.msgs = {}
+            dp.passed_count = 0
+            dp.failed_count = 0
+            update_model_status(model_id, db)
+            db.commit()
+        return {"success": True, "passed_count": 0, "failed_count": 0, "errors": {}, "msgs": {}}
+
+    # 生成 compress/preview
+    all_image_list = [(rel, None) for rel in all_image_rels]
+    errors, msgs = process_images_parallel(model_id, resource_type, original_dir, all_image_list)
+
+    # JSON 校验（仅 defect）
+    if resource_type in ("defect"):
+        json_errors = validate_new_annotations(original_dir, all_image_rels)
+        errors.update(json_errors)
+
+    # 计算 unique error images
+    unique_error_images = set()
+    for key in errors.keys():
+        base = os.path.splitext(key)[0]
+        if base + ".jpg" in errors:
+            unique_error_images.add(base + ".jpg")
+        elif base + ".png" in errors:
+            unique_error_images.add(base + ".png")
+        elif base + ".jpeg" in errors:
+            unique_error_images.add(base + ".jpeg")
+        else:
+            unique_error_images.add(key)
+
+    failed = len(unique_error_images)
+    passed = max(0, len(all_image_rels) - failed)
+
+    # 全量更新台账
+    dp = db.query(DataPackage).filter(
+        DataPackage.model_id == model_id,
+        DataPackage.resource_type == resource_type,
+    ).first()
+    if dp:
+        dp.errors = errors
+        dp.msgs = msgs
+        dp.passed_count = passed
+        dp.failed_count = failed
+    else:
+        db.add(DataPackage(
+            model_id=model_id,
+            resource_type=resource_type,
+            file_path=f"uploads/{model_id}/{resource_type}/",
+            passed_count=passed,
+            failed_count=failed,
+            errors=errors,
+            msgs=msgs,
+        ))
+    update_model_status(model_id, db)
+    db.commit()
+
+    logger.info(f"重新入库完成 resource={resource_type} model={model_id} 总计={len(all_image_rels)} 通过={passed} 失败={failed}")
+    return {"success": True, "passed_count": passed, "failed_count": failed, "errors": errors, "msgs": msgs}
+
+
 def _validate_resource_type(resource_type: str):
     if resource_type not in ("good", "defect", "test", "template"):
         raise HTTPException(status_code=400, detail="无效的资源类型")
@@ -344,6 +434,36 @@ def get_upload_status_endpoint(
     if status.get("status") in ("completed", "failed"):
         _delete_status(upload_id)
     return status
+
+
+# ── 重新入库 ─────────────────────────────────────────────
+
+
+@router.post("/{model_id}/{resource_type}/reprocess")
+def reprocess_resource(model_id: str, resource_type: str, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """重新扫描 original/ 下的图片，重新生成 compress/preview，更新台账。异步执行，立即返回 processing 状态。"""
+    _validate_resource_type(resource_type)
+    check_model_owner(model_id, user["user_id"], db)
+
+    # 先确认有图片可处理
+    original_dir = os.path.join(get_resource_dir(model_id, resource_type), "original")
+    has_images = False
+    if os.path.exists(original_dir):
+        for root, _dirs, files in os.walk(original_dir, followlinks=False):
+            for fname in files:
+                if is_supported_image(fname):
+                    has_images = True
+                    break
+            if has_images:
+                break
+
+    if not has_images:
+        raise HTTPException(status_code=400, detail="没有可处理的图片")
+
+    from services.zip_queue import enqueue_reprocess
+
+    reprocess_id = enqueue_reprocess(model_id, resource_type)
+    return {"success": True, "reprocess_id": reprocess_id, "status": "processing"}
 
 
 # ── 磁盘空间检查 ─────────────────────────────────────────

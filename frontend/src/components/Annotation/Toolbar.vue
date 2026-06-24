@@ -381,6 +381,14 @@ async function confirmDeleteImage() {
   }
 }
 
+.btn-reprocess {
+  color: #e6a23c !important;
+  &:disabled {
+    opacity: 0.5 !important;
+    pointer-events: none !important;
+  }
+}
+
 .btn-delete-img {
   background: #f56c6c !important;
   color: #fff !important;

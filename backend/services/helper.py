@@ -80,8 +80,20 @@ def _process_image_worker(args: tuple) -> tuple[str, str | None, dict | None]:
 
         msg_entry = {"width": w, "height": h, "channels": channels}
 
-        # Convert to 3-channel for compress/preview
-        img = cv2.cvtColor(raw, cv2.COLOR_BGR2RGB) if channels == 3 else cv2.cvtColor(raw, cv2.COLOR_GRAY2RGB)
+        # Convert to 3-channel RGB for compress/preview.
+        # OpenCV's cvtColor assumes BGR which is wrong for TIFF files
+        # (TIFF stores RGB, not BGR). Use PIL for colour-correct conversion
+        # for all 3/4 channel images, and GRAY2RGB for single channel.
+        if channels == 1:
+            img = cv2.cvtColor(raw, cv2.COLOR_GRAY2RGB)
+        else:
+            from PIL import Image as PILImage
+
+            try:
+                pil = PILImage.open(orig_path).convert("RGB")
+                img = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+            except Exception:
+                return (rel_path, "failed to decode image with PIL", None)
 
         # preview: original size q95 JPEG
         preview_path = os.path.join(resource_dir, "preview", out_name)

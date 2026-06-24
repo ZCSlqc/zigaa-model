@@ -122,6 +122,11 @@ export function updateImageMsg(modelId: string, resourceType: string, imagePath:
   return client.patch(`/annotations/${modelId}/${resourceType}/msg/${imagePath}`, data)
 }
 
+// 重新入库
+export function reprocessResource(modelId: string, resourceType: string) {
+  return client.post(`/resources/${modelId}/${resourceType}/reprocess`)
+}
+
 // 分片下载
 export function downloadInit(modelId: string, resourceType: string) {
   return client.post(`/resources/${modelId}/${resourceType}/download-init`, {}, { timeout: LONG_TIMEOUT })

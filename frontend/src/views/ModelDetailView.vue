@@ -54,6 +54,14 @@
                 @click="annotate('good')"
                 >标注</el-button
               >
+              <el-button
+                size="small"
+                class="btn-reprocess"
+                :disabled="!goodLoaded"
+                :loading="isLoading('reprocess-good')"
+                @click="handleReprocess('good')"
+                >重新入库</el-button
+              >
             </div>
             <div class="resource-status">
               <span v-if="!goodLoaded" class="empty-text">暂无数据</span>
@@ -114,6 +122,14 @@
                 :disabled="!defectLoaded"
                 @click="annotate('defect')"
                 >标注</el-button
+              >
+              <el-button
+                size="small"
+                class="btn-reprocess"
+                :disabled="!defectLoaded"
+                :loading="isLoading('reprocess-defect')"
+                @click="handleReprocess('defect')"
+                >重新入库</el-button
               >
             </div>
             <div class="resource-status">
@@ -213,6 +229,14 @@
               >
               <el-button
                 size="small"
+                class="btn-reprocess"
+                :disabled="!testLoaded"
+                :loading="isLoading('reprocess-test')"
+                @click="handleReprocess('test')"
+                >重新入库</el-button
+              >
+              <el-button
+                size="small"
                 :loading="isLoading('test-logs')"
                 :disabled="!testLoaded"
                 @click="handleTestLogs"
@@ -263,6 +287,14 @@
                 :disabled="!templateLoaded"
                 @click="annotate('template')"
                 >预览</el-button
+              >
+              <el-button
+                size="small"
+                class="btn-reprocess"
+                :disabled="!templateLoaded"
+                :loading="isLoading('reprocess-template')"
+                @click="handleReprocess('template')"
+                >重新入库</el-button
               >
             </div>
             <div class="resource-status">
@@ -317,6 +349,24 @@
       </el-dialog>
 
       <DownloadDialog ref="downloadDialogRef" />
+
+      <!-- 重新入库弹窗 -->
+      <el-dialog v-model="showReprocessDialog" title="重新入库" width="420px" :close-on-click-modal="false">
+        <div class="reprocess-status">
+          <el-icon v-if="reprocessStatus === 'processing'" class="is-loading" style="font-size: 32px; color: #409eff"><Loading /></el-icon>
+          <el-icon v-else-if="reprocessStatus === 'completed'" style="font-size: 32px; color: #67c23a"><CircleCheckFilled /></el-icon>
+          <el-icon v-else-if="reprocessStatus === 'failed'" style="font-size: 32px; color: #f56c6c"><CircleCloseFilled /></el-icon>
+          <p class="reprocess-text">{{ reprocessMessage }}</p>
+          <p v-if="reprocessStatus === 'completed'" class="reprocess-detail">
+            处理 {{ reprocessResult?.passed_count ?? 0 }} 张，失败 {{ reprocessResult?.failed_count ?? 0 }} 张
+          </p>
+          <p v-if="reprocessStatus === 'failed'" class="reprocess-error">{{ reprocessError }}</p>
+        </div>
+        <template #footer>
+          <el-button v-if="reprocessStatus !== 'processing'" @click="closeReprocessDialog">确定</el-button>
+          <el-button v-if="reprocessStatus === 'processing'" @click="cancelReprocess">取消</el-button>
+        </template>
+      </el-dialog>
     </div>
   </AppLayout>
 </template>
@@ -325,7 +375,7 @@
 import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowLeft, Folder, Document } from "@element-plus/icons-vue";
+import { ArrowLeft, Folder, Document, Loading, CircleCheckFilled, CircleCloseFilled } from "@element-plus/icons-vue";
 import AppLayout from "../components/Layout/AppLayout.vue";
 import ZipUpload from "../components/Upload/ZipUpload.vue";
 import JsonUpload from "../components/Upload/JsonUpload.vue";
@@ -346,6 +396,8 @@ import {
   editParameter,
   deleteParameterFile,
   checkDiskSpace,
+  reprocessResource,
+  getUploadStatus,
 } from "../api/resource";
 
 const route = useRoute();
@@ -445,6 +497,93 @@ async function handleTestLogs() {
     ElMessage.error(e.response?.data?.detail || '获取测试日志失败')
   } finally {
     stopLoading()
+  }
+}
+
+// ── 重新入库 ──
+const showReprocessDialog = ref(false);
+const reprocessStatus = ref<'idle' | 'processing' | 'completed' | 'failed'>('idle');
+const reprocessMessage = ref('');
+const reprocessError = ref('');
+const reprocessResult = ref<any>(null);
+let reprocessPollTimer: ReturnType<typeof setInterval> | null = null;
+let reprocessCountdownTimer: ReturnType<typeof setInterval> | null = null;
+
+function clearReprocessTimers() {
+  if (reprocessPollTimer) { clearInterval(reprocessPollTimer); reprocessPollTimer = null; }
+  if (reprocessCountdownTimer) { clearInterval(reprocessCountdownTimer); reprocessCountdownTimer = null; }
+}
+
+function closeReprocessDialog() {
+  showReprocessDialog.value = false;
+  clearReprocessTimers();
+}
+
+function cancelReprocess() {
+  // 轮询是单向的，取消不了后端任务，只需关闭弹窗
+  clearReprocessTimers();
+  showReprocessDialog.value = false;
+}
+
+async function handleReprocess(type: "good" | "defect" | "test" | "template") {
+  const typeNames: Record<string, string> = { good: '良品', defect: '缺陷', test: '测试', template: '模板' }
+  try {
+    await ElMessageBox.confirm(
+      `确定要对"${typeNames[type]}"资源重新入库吗？将重新生成压缩图和预览图。`,
+      '确认重新入库',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' },
+    );
+  } catch { return; }
+
+  reprocessStatus.value = 'processing';
+  reprocessMessage.value = '正在重新入库...';
+  reprocessError.value = '';
+  reprocessResult.value = null;
+  showReprocessDialog.value = true;
+
+  try {
+    const res: any = await reprocessResource(modelId.value, type);
+    const reprocessId = res.data.reprocess_id;
+
+    let countdownSeconds = 30;
+    reprocessCountdownTimer = setInterval(() => {
+      if (reprocessStatus.value !== 'processing') {
+        clearInterval(reprocessCountdownTimer!);
+        reprocessCountdownTimer = null;
+        return;
+      }
+      if (countdownSeconds > 2) { countdownSeconds--; }
+    }, 1000);
+
+    reprocessPollTimer = setInterval(async () => {
+      if (reprocessStatus.value !== 'processing') return;
+      try {
+        const statusRes: any = await getUploadStatus(modelId.value, type, reprocessId);
+        const d = statusRes.data;
+        if (d.status === 'completed') {
+          reprocessStatus.value = 'completed';
+          reprocessMessage.value = '重新入库完成';
+          reprocessResult.value = d.result;
+          clearInterval(reprocessPollTimer!);
+          reprocessPollTimer = null;
+          clearInterval(reprocessCountdownTimer!);
+          reprocessCountdownTimer = null;
+          await fetchModel();
+        } else if (d.status === 'failed') {
+          reprocessStatus.value = 'failed';
+          reprocessMessage.value = '重新入库失败';
+          reprocessError.value = d.error || '处理失败';
+          clearInterval(reprocessPollTimer!);
+          reprocessPollTimer = null;
+          clearInterval(reprocessCountdownTimer!);
+          reprocessCountdownTimer = null;
+        }
+      } catch { /* ignore polling errors */ }
+    }, 5000);
+  } catch (e: any) {
+    reprocessStatus.value = 'failed';
+    reprocessMessage.value = '重新入库失败';
+    reprocessError.value = e.response?.data?.detail || '操作失败';
   }
 }
 
@@ -847,5 +986,39 @@ onMounted(() => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.btn-reprocess {
+  color: #e6a23c !important;
+  &:disabled {
+    opacity: 0.5 !important;
+    pointer-events: none !important;
+  }
+}
+
+.reprocess-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 0;
+}
+
+.reprocess-text {
+  font-size: 16px;
+  color: var(--text-regular);
+  margin: 0;
+}
+
+.reprocess-detail {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.reprocess-error {
+  font-size: 14px;
+  color: #f56c6c;
+  margin: 0;
 }
 </style>

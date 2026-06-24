@@ -141,13 +141,18 @@ def _process_one(task: dict):
     model_id = task["model_id"]
     resource_type = task["resource_type"]
     upload_id = task["upload_id"]
-    extract_dir = task["extract_dir"]
+    is_reprocess = task.get("is_reprocess", False)
+    extract_dir = task.get("extract_dir")
 
-    from api.resources import _process_extracted_dir
+    from api.resources import _process_extracted_dir, _process_reprocess
 
     db = SessionLocal()
     try:
-        result = _process_extracted_dir(model_id, resource_type, extract_dir, db)
+        if is_reprocess:
+            # 重新入库：直接处理 original/ 目录（不复制）
+            result = _process_reprocess(model_id, resource_type, db)
+        else:
+            result = _process_extracted_dir(model_id, resource_type, extract_dir, db)
 
         st = _read_status(upload_id)
         if st:
@@ -159,7 +164,8 @@ def _process_one(task: dict):
 
         process_elapsed = time.time() - (st["created_at"] if st else time.time())
         total_images = result.get("passed_count", 0) + result.get("failed_count", 0)
-        logger.info(f"后端处理完成 resource={resource_type} model={model_id} 新增图片={total_images} 新增通过={result.get('passed_count', 0)} 新增错误={result.get('failed_count', 0)} 后端处理耗时={process_elapsed:.1f}s")
+        task_type = "重新入库" if is_reprocess else "后端处理"
+        logger.info(f"{task_type}完成 resource={resource_type} model={model_id} 处理图片={total_images} 通过={result.get('passed_count', 0)} 失败={result.get('failed_count', 0)} 耗时={process_elapsed:.1f}s")
     except Exception as e:
         detail = str(e)
         if hasattr(e, "detail"):
@@ -170,14 +176,53 @@ def _process_one(task: dict):
             st["error"] = detail
             st["updated_at"] = time.time()
             _write_status(upload_id, st)
-        logger.error(f"后端处理失败 model={model_id} type={resource_type} upload={upload_id} error={detail}")
+        logger.error(f"{task_type}失败 model={model_id} type={resource_type} upload={upload_id} error={detail}", exc_info=True)
         db.rollback()
     finally:
-        try:
-            shutil.rmtree(extract_dir, ignore_errors=True)
-        except Exception:
-            pass
+        if not is_reprocess:
+            try:
+                shutil.rmtree(extract_dir, ignore_errors=True)
+            except Exception:
+                pass
         db.close()
+
+
+_reprocess_queues: dict[tuple[str, str], "ProcessingQueue"] = {}
+_reprocess_lock = threading.Lock()
+
+
+def enqueue_reprocess(model_id: str, resource_type: str) -> str:
+    """将重新入库任务丢入串行队列，返回 status key。"""
+    import uuid
+
+    reprocess_id = f"reprocess-{uuid.uuid4().hex[:8]}"
+    st = {
+        "upload_id": reprocess_id,
+        "model_id": model_id,
+        "resource_type": resource_type,
+        "filename": "",
+        "status": "processing",
+        "progress": 0,
+        "estimated_seconds": 30,
+        "result": None,
+        "error": None,
+        "created_at": time.time(),
+        "updated_at": time.time(),
+    }
+    _write_status(reprocess_id, st)
+
+    key = (model_id, resource_type)
+    with _reprocess_lock:
+        if key not in _reprocess_queues:
+            _reprocess_queues[key] = ProcessingQueue(model_id, resource_type)
+        _reprocess_queues[key].q.put({
+            "model_id": model_id,
+            "resource_type": resource_type,
+            "upload_id": reprocess_id,  # reused as status key
+            "is_reprocess": True,
+        })
+    logger.info(f"重新入库入队 model={model_id} type={resource_type} id={reprocess_id}")
+    return reprocess_id
 
 
 def _delete_status(upload_id: str):
