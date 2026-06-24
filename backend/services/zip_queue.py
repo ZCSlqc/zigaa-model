@@ -142,6 +142,7 @@ def _process_one(task: dict):
     resource_type = task["resource_type"]
     upload_id = task["upload_id"]
     is_reprocess = task.get("is_reprocess", False)
+    user_id = task.get("user_id")
     extract_dir = task.get("extract_dir")
 
     from api.resources import _process_extracted_dir, _process_reprocess
@@ -149,8 +150,8 @@ def _process_one(task: dict):
     db = SessionLocal()
     try:
         if is_reprocess:
-            # 重新入库：直接处理 original/ 目录（不复制）
-            result = _process_reprocess(model_id, resource_type, db)
+            # 重新入库：验证所有权后直接处理 original/ 目录（不复制）
+            result = _process_reprocess(model_id, resource_type, db, user_id)
         else:
             result = _process_extracted_dir(model_id, resource_type, extract_dir, db)
 
@@ -191,7 +192,7 @@ _reprocess_queues: dict[tuple[str, str], "ProcessingQueue"] = {}
 _reprocess_lock = threading.Lock()
 
 
-def enqueue_reprocess(model_id: str, resource_type: str) -> str:
+def enqueue_reprocess(model_id: str, resource_type: str, user_id: str) -> str:
     """将重新入库任务丢入串行队列，返回 status key。"""
     import uuid
 
@@ -220,6 +221,7 @@ def enqueue_reprocess(model_id: str, resource_type: str) -> str:
             "resource_type": resource_type,
             "upload_id": reprocess_id,  # reused as status key
             "is_reprocess": True,
+            "user_id": user_id,
         })
     logger.info(f"重新入库入队 model={model_id} type={resource_type} id={reprocess_id}")
     return reprocess_id

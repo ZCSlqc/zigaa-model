@@ -134,9 +134,10 @@ def _process_extracted_dir(model_id: str, resource_type: str, extract_dir: str, 
     return {"success": True, "passed_count": new_passed, "failed_count": actual_failed, "errors": new_errors, "msgs": new_msgs}
 
 
-def _process_reprocess(model_id: str, resource_type: str, db: Session) -> dict:
+def _process_reprocess(model_id: str, resource_type: str, db: Session, user_id: str) -> dict:
     """重新扫描 original/ 下的图片，删除旧 compress/preview，重新生成，更新台账。"""
-    logger.info(f"重新入库开始 resource={resource_type} model={model_id}")
+    check_model_owner(model_id, user_id, db)
+    logger.info(f"重新入库开始 resource={resource_type} model={model_id} user={user_id}")
 
     original_dir = os.path.join(get_resource_dir(model_id, resource_type), "original")
     if not os.path.exists(original_dir):
@@ -462,7 +463,7 @@ def reprocess_resource(model_id: str, resource_type: str, db: Session = Depends(
 
     from services.zip_queue import enqueue_reprocess
 
-    reprocess_id = enqueue_reprocess(model_id, resource_type)
+    reprocess_id = enqueue_reprocess(model_id, resource_type, user["user_id"])
     return {"success": True, "reprocess_id": reprocess_id, "status": "processing"}
 
 
