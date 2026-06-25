@@ -221,10 +221,28 @@ export function useDownloadManager() {
   }
 
   async function finishDownload(sessionId: string, totalChunks: number): Promise<void> {
-    const parts: ArrayBuffer[] = []
+    // Stream: write each chunk to a Blob piece-by-piece to avoid loading everything into memory.
+    // For very large files (e.g. 50GB+ model ZIPs) a Blob of all chunks would OOM the browser.
+    // Instead we build a Blob from an array of Blob pieces, where each piece is one chunk's
+    // ArrayBuffer wrapped in a Blob — the browser handles the concatenation lazily.
+    // If the browser still chokes (e.g. Safari has a ~16MB Blob limit), fall back to
+    // stream-to-filesystem via the Save FileSystem API.
+
+    const MAX_BLOB_PIECES = 200  // heuristic cap — Safari's Blob limit is ~16MB per piece total
+    if (totalChunks > MAX_BLOB_PIECES * 8) {
+      // Very large files: try FileSystem API (Chrome/Edge only)
+      try {
+        await finishDownloadFileSystem(sessionId, totalChunks)
+        return
+      } catch {
+        // Fallback: try Blob approach anyway, may still OOM on some browsers
+      }
+    }
+
+    const parts: Blob[] = []
     for (let i = 0; i < totalChunks; i++) {
       const data = await getChunkFromDb(sessionId, i)
-      if (data) parts.push(data)
+      if (data) parts.push(new Blob([data]))
     }
     const blob = new Blob(parts)
     const url = URL.createObjectURL(blob)
@@ -235,6 +253,29 @@ export function useDownloadManager() {
     a.click()
     URL.revokeObjectURL(url)
     document.body.removeChild(a)
+    await deleteSession(sessionId)
+    state.status = 'complete'
+    state.percentage = 100
+  }
+
+  async function finishDownloadFileSystem(sessionId: string, totalChunks: number): Promise<void> {
+    // Use the File System Access API (Chrome 86+) to stream chunks directly to disk
+    // without ever holding the full file in memory.
+    const handle = await (window as any).showSaveFilePicker({
+      suggestedName: state.filename,
+      types: [{
+        description: 'ZIP File',
+        accept: { 'application/zip': ['.zip'] },
+      }],
+    })
+    const writable = await handle.createWritable()
+    for (let i = 0; i < totalChunks; i++) {
+      const data = await getChunkFromDb(sessionId, i)
+      if (data) {
+        await writable.write(data)
+      }
+    }
+    await writable.close()
     await deleteSession(sessionId)
     state.status = 'complete'
     state.percentage = 100

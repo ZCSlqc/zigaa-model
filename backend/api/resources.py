@@ -137,7 +137,7 @@ def _process_extracted_dir(model_id: str, resource_type: str, extract_dir: str, 
 def _process_reprocess(model_id: str, resource_type: str, db: Session, user_id: str) -> dict:
     """重新扫描 original/ 下的图片，删除旧 compress/preview，重新生成，更新台账。"""
     check_model_owner(model_id, user_id, db)
-    logger.info(f"重新入库开始 resource={resource_type} model={model_id} user={user_id}")
+    logger.info(f"重新入库开始 resource={resource_type} model={model_id}")
 
     original_dir = os.path.join(get_resource_dir(model_id, resource_type), "original")
     if not os.path.exists(original_dir):
@@ -246,6 +246,15 @@ def _get_resource_src_dir(model_id: str, resource_type: str) -> str:
     return original_dir
 
 
+def _get_arrange_dirs(model_id: str, resource_type: str) -> list[str]:
+    """返回 original/ 下的时间戳子目录列表（已排序）"""
+    original_dir = os.path.join(get_resource_dir(model_id, resource_type), "original")
+    if not os.path.exists(original_dir):
+        return []
+    return sorted([d for d in os.listdir(original_dir)
+                   if os.path.isdir(os.path.join(original_dir, d))])
+
+
 def _create_zip_from_dir(src_dir: str) -> str:
     tmp_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=UPLOAD_TMP_DIR)
     tmp_zip.close()
@@ -254,6 +263,23 @@ def _create_zip_from_dir(src_dir: str) -> str:
             for fname in files:
                 fpath = os.path.join(root, fname)
                 arcname = os.path.relpath(fpath, src_dir)
+                zf.write(fpath, arcname)
+    return tmp_zip.name
+
+
+def _create_zip_from_arrange(model_id: str, resource_type: str, arrange_name: str) -> str:
+    """打包单个时间戳文件夹（仅 original/ 下的内容）"""
+    original_dir = os.path.join(get_resource_dir(model_id, resource_type), "original")
+    arrange_path = os.path.join(original_dir, arrange_name)
+    if not os.path.isdir(arrange_path):
+        raise HTTPException(status_code=404, detail=f"批次不存在: {arrange_name}")
+    tmp_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=UPLOAD_TMP_DIR)
+    tmp_zip.close()
+    with zipfile.ZipFile(tmp_zip.name, "w", zipfile.ZIP_STORED) as zf:
+        for root, _dirs, files in os.walk(arrange_path, followlinks=False):
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                arcname = os.path.relpath(fpath, original_dir)
                 zf.write(fpath, arcname)
     return tmp_zip.name
 
@@ -643,16 +669,35 @@ def delete_parameter(model_id: str, db: Session = Depends(get_db), user: dict = 
 # ── 资源下载 ─────────────────────────────────────────────
 
 
-@router.post("/{model_id}/{resource_type}/download-init")
-def resource_download_init(model_id: str, resource_type: str, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    """初始化分片下载：创建临时 ZIP，返回会话信息"""
+@router.get("/{model_id}/{resource_type}/arrange-list")
+def resource_arrange_list(model_id: str, resource_type: str,
+                          db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """获取 original/ 下的时间戳文件夹列表"""
     check_model_owner(model_id, user["user_id"], db)
-    src_dir = _get_resource_src_dir(model_id, resource_type)
+    dirs = _get_arrange_dirs(model_id, resource_type)
+    return {"arrange_dirs": dirs}
+
+
+@router.post("/{model_id}/{resource_type}/download-init")
+def resource_download_init(model_id: str, resource_type: str, arrange_name: str = Query(None),
+                           db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """初始化分片下载：可选按单个时间戳文件夹打包"""
+    check_model_owner(model_id, user["user_id"], db)
+
     t0 = time.time()
-    zip_path = _create_zip_from_dir(src_dir)
+    if arrange_name:
+        # 按单个时间戳文件夹打包
+        zip_path = _create_zip_from_arrange(model_id, resource_type, arrange_name)
+        filename = f"{resource_type}_{arrange_name}.zip"
+    else:
+        # 兼容：全量打包（保留旧行为）
+        src_dir = _get_resource_src_dir(model_id, resource_type)
+        zip_path = _create_zip_from_dir(src_dir)
+        filename = f"{resource_type}.zip"
+
     try:
         file_size = os.path.getsize(zip_path)
-        session = create_download_session(zip_path, f"{resource_type}.zip", file_size, user["user_id"])
+        session = create_download_session(zip_path, filename, file_size, user["user_id"])
     except Exception:
         os.unlink(zip_path)
         raise

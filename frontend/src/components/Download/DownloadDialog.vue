@@ -95,7 +95,7 @@ function handleClose() {
   reset()
 }
 
-defineExpose({ openDownload, openDownloadWithSession })
+defineExpose({ openDownload, openDownloadWithSession, cancel })
 </script>
 
 <style scoped lang="scss">

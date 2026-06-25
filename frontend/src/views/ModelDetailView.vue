@@ -349,6 +349,15 @@
       </el-dialog>
 
       <DownloadDialog ref="downloadDialogRef" />
+      <BatchDownloadDialog
+        ref="batchDownloadDialogRef"
+        :model-id="modelId"
+        :resource-type="batchDownloadType"
+        :arrange-names="batchArrangeNames"
+        :resource-label="batchDownloadLabel"
+        :download-api="batchDownloadApi"
+        @all-done="handleBatchAllDone"
+      />
 
       <!-- 重新入库弹窗 -->
       <el-dialog v-model="showReprocessDialog" title="重新入库" width="420px" :close-on-click-modal="false">
@@ -381,6 +390,7 @@ import ZipUpload from "../components/Upload/ZipUpload.vue";
 import JsonUpload from "../components/Upload/JsonUpload.vue";
 import JsonEditor from "../components/Editor/JsonEditor.vue";
 import DownloadDialog from "../components/Download/DownloadDialog.vue";
+import BatchDownloadDialog from "../components/Download/BatchDownloadDialog.vue";
 import { useSingleLoading } from "../composables/useDelayedLoading";
 import { useProjectStore } from "../stores/project";
 import { resolveDataStatus, dataStatusTagType, dataStatusDisplayText, resolveTrainingStatus, trainingStatusTagType, trainingStatusDisplayText, resolveTestStatus, testStatusTagType, testStatusDisplayText } from "../utils/model-status";
@@ -459,6 +469,17 @@ const templateErrors = ref<any[]>([]);
 const uploading = ref<"good" | "defect" | "test" | "template" | null>(null);
 const downloading = ref<"good" | "defect" | "parameter" | "test" | "template" | null>(null);
 const downloadDialogRef = ref<InstanceType<typeof DownloadDialog>>();
+const batchDownloadDialogRef = ref<InstanceType<typeof BatchDownloadDialog>>();
+
+// Batch download state
+const batchArrangeNames = ref<string[]>([]);
+const batchDownloadType = ref<"good" | "defect" | "test" | "template">("good");
+const batchDownloadLabel = ref("");
+const batchDownloadApi = ref<any>({
+  init: async () => ({}),
+  chunk: () => Promise.resolve(),
+  cleanup: () => Promise.resolve(),
+});
 
 // 弹窗控制
 const showZipDialog = ref(false);
@@ -717,13 +738,6 @@ async function download(type: "good" | "defect" | "parameter" | "test" | "templa
     ElMessage.warning("暂无数据");
     return;
   }
-  const filenames: Record<string, string> = {
-    good: "good.zip",
-    defect: "defect.zip",
-    parameter: "parameter.json",
-    test: "test.zip",
-    template: "template.zip",
-  };
 
   // JSON 参数直接下载
   if (type === "parameter") {
@@ -733,7 +747,7 @@ async function download(type: "good" | "defect" | "parameter" | "test" | "templa
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
       a.href = url;
-      a.download = filenames[type];
+      a.download = "parameter.json";
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -746,29 +760,38 @@ async function download(type: "good" | "defect" | "parameter" | "test" | "templa
     return;
   }
 
-  // ZIP 分片下载
-  downloading.value = type;
-  const { downloadInit, downloadChunk, downloadCleanup } = await import('../api/resource');
+  // ZIP 分片下载：先拉取时间戳文件夹列表，弹 BatchDownloadDialog
+  const resourceLabels: Record<string, string> = { good: "良品数据库", defect: "缺陷数据库", test: "测试数据库", template: "模板数据库" };
+  const { downloadInit, downloadChunk, downloadCleanup, arrangeList } = await import('../api/resource');
+
   try {
-    const initRes = await downloadInit(modelId.value, type);
-    downloadDialogRef.value?.openDownloadWithSession(
-      {
-        modelId: modelId.value,
-        resourceType: type,
-        filename: filenames[type],
-        api: {
-          init: () => Promise.resolve(),
-          chunk: (mid: string, rt: string, sid: string, idx: number, signal?: AbortSignal) => downloadChunk(mid, rt, sid, idx, signal),
-          cleanup: (mid: string, rt: string, sid: string) => downloadCleanup(mid, rt, sid),
-        },
+    const listRes: any = await arrangeList(modelId.value, type);
+    const names = listRes.data.arrange_dirs || [];
+
+    if (names.length === 0) {
+      ElMessage.warning("暂无可下载的批次");
+      return;
+    }
+
+    batchArrangeNames.value = names;
+    batchDownloadType.value = type;
+    batchDownloadLabel.value = resourceLabels[type] || type;
+    batchDownloadApi.value = {
+      init: async (mid: string, rt: string, arrange: string) => {
+        const res: any = await downloadInit(mid, rt, { arrange_name: arrange });
+        return res;
       },
-      initRes.data,
-    );
+      chunk: (mid: string, rt: string, sid: string, idx: number, signal?: AbortSignal) => downloadChunk(mid, rt, sid, idx, signal),
+      cleanup: (mid: string, rt: string, sid: string) => downloadCleanup(mid, rt, sid),
+    };
+    batchDownloadDialogRef.value?.openDialog();
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || "下载失败");
-  } finally {
-    downloading.value = null;
+    ElMessage.error(e.response?.data?.detail || "获取批次列表失败");
   }
+}
+
+function handleBatchAllDone() {
+  downloading.value = null;
 }
 
 // 删除
@@ -878,6 +901,18 @@ function getTypeLoaded(type: string): boolean {
 
 onMounted(() => {
   fetchModel();
+
+  // Batch download event bridge
+  window.addEventListener('batch-download-start', (e: any) => {
+    const { modelId: mid, resourceType: rt, filename, session, api } = e.detail;
+    downloadDialogRef.value?.openDownloadWithSession(
+      { modelId: mid, resourceType: rt, filename, api: api as any },
+      session,
+    );
+  });
+  window.addEventListener('batch-download-cancel', () => {
+    downloadDialogRef.value?.cancel?.();
+  });
 });
 </script>
 

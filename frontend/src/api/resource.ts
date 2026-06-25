@@ -128,8 +128,12 @@ export function reprocessResource(modelId: string, resourceType: string) {
 }
 
 // 分片下载
-export function downloadInit(modelId: string, resourceType: string) {
-  return client.post(`/resources/${modelId}/${resourceType}/download-init`, {}, { timeout: LONG_TIMEOUT })
+export function arrangeList(modelId: string, resourceType: string) {
+  return client.get(`/resources/${modelId}/${resourceType}/arrange-list`)
+}
+
+export function downloadInit(modelId: string, resourceType: string, extra?: Record<string, any>) {
+  return client.post(`/resources/${modelId}/${resourceType}/download-init`, {}, { params: extra })
 }
 
 export function downloadChunk(modelId: string, resourceType: string, sessionId: string, chunkIndex: number, signal?: AbortSignal) {
