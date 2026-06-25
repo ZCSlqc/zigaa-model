@@ -79,9 +79,22 @@ const visible = ref(false)
 const selected = ref<string[]>([])
 const downloading = ref(false)
 const itemStatuses = ref<Record<string, 'idle' | 'downloading' | 'complete' | 'error'>>({})
+let downloadDialogClosedResolver: (() => void) | null = null
 
 // 列表最大高度
 const listMaxHeight = ref(360)
+
+// 监听 DownloadDialog 关闭事件
+function setupDialogCloseListener() {
+  const handler = () => {
+    if (downloadDialogClosedResolver) {
+      downloadDialogClosedResolver()
+      downloadDialogClosedResolver = null
+    }
+  }
+  window.addEventListener('download-dialog-closed', handler)
+}
+setupDialogCloseListener()
 
 const dialogTitle = computed(() => {
   return `选择要下载的批次 — ${props.resourceLabel || props.resourceType}`
@@ -123,7 +136,33 @@ const toggleSelectAll = () => {
   }
 }
 
-// 等待 DownloadDialog 完成
+// 等待 DownloadDialog 的弹窗关闭（visible 变 false）
+function waitForDialogClose(timeout = 300000): Promise<void> {
+  return new Promise((resolve) => {
+    const start = Date.now()
+    const check = () => {
+      const ref = document.querySelector('[data-dialog-download]') as any
+      const el = ref?.__vue_parent_component__?.vnode?.el as HTMLElement
+      if (!el) {
+        // 降级：用 setTimeout 等待
+        setTimeout(resolve, 1500)
+        return
+      }
+      if (!el.closest('.el-dialog')) {
+        resolve()
+        return
+      }
+      if (Date.now() - start > timeout) {
+        resolve()
+        return
+      }
+      setTimeout(check, 300)
+    }
+    check()
+  })
+}
+
+// 等待 DownloadDialog 状态结束
 function waitForComplete(timeout = 300000): Promise<boolean> {
   return new Promise((resolve) => {
     const start = Date.now()
@@ -202,6 +241,14 @@ async function startDownload() {
           itemStatuses.value[arrangeName] = 'error'
           throw new Error(state.status === 'cancelled' ? '已取消' : '下载失败')
         }
+
+        // 6. 清理 + 等弹窗关闭
+        resetManager()
+        await new Promise<void>((resolve) => {
+          downloadDialogClosedResolver = () => resolve()
+          // 3秒超时兜底
+          setTimeout(resolve, 3000)
+        })
       } catch (e: any) {
         const msg = e?.response?.data?.detail || e?.message || '下载失败'
         itemStatuses.value[arrangeName] = 'error'
@@ -209,10 +256,12 @@ async function startDownload() {
           cancelDownloadMgr()
         }
         ElMessage.error(`批次 ${arrangeName} 下载失败: ${msg}`)
-        // 继续下一个
-      } finally {
-        // 清理状态
+        // 清理 + 兜底等弹窗关闭
         resetManager()
+        await new Promise<void>((resolve) => {
+          downloadDialogClosedResolver = () => resolve()
+          setTimeout(resolve, 3000)
+        })
       }
     }
   } finally {

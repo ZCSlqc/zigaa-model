@@ -93,6 +93,7 @@ async function handleCancel() {
 function handleClose() {
   visible.value = false
   reset()
+  window.dispatchEvent(new CustomEvent('download-dialog-closed'))
 }
 
 defineExpose({ openDownload, openDownloadWithSession, cancel })
