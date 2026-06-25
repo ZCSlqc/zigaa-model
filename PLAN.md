@@ -1,7 +1,7 @@
 # Zigaa 大模型云平台 — 实施规划
 
 > 工业缺陷检测平台的数据管理 Web 应用 + 本地模型训练
-> 创建于 2026-05-13 | 最后更新 2026-06-18
+> 创建于 2026-05-13 | 最后更新 2026-06-25
 
 ## 一、项目概述
 
@@ -49,6 +49,8 @@
 - ZIP 分片上传（64MB/chunk，支持断点续传、取消恢复、清除缓存）
 - ZIP 分片下载（IndexedDB 持久化 + 断点续传 + 并行 3 线程 + 进度弹窗）
 - 模型分片下载（init → chunk → assemble 流程，404 弹 ElMessage 不闪弹窗）
+- 资源批次下载：arrange-list 获取时间戳文件夹列表，BatchDownloadDialog 支持多批次顺序下载，每批次等待弹窗完成
+- 标注树文件夹下载：点击 TreeItem 下载图标，按 arrange_name 参数单独下载文件夹
 - ZIP 追加模式（同文件不覆盖，相对路径前缀冲突检测 + 自增后缀）
 - 参数 JSON 上传 / 在线编辑（CodeMirror）/ 下载 / 删除
 - 图片三级存储: original/ + compress/ + preview/
@@ -122,6 +124,15 @@
 - 后端健壮性修复：ZIP 软链接穿越、分片清理检查 uploading、磁盘检查日志、index 路径 normpath
 - 配置集中化：`.env` 统一端口/地址，`start.sh`/`vite.config.ts`/`config.py` 均从环境变量读取，CORS 全来源开放
 - Bug 修复：`annotation.ts` 中 `updateImageMsgFn` 变量名 `cat` → `category`（拼写错误导致本地状态更新为 `undefined`）
+- 标注树文件夹下载：ImagePanel/TreeItem 支持点击下载文件夹，弹出确认 → 进度弹窗，复用 useDownloadManager（百分比/速度/ETA），ZIP 命名 `{resourceType}_{arrangeName}.zip`
+- 下载架构：BatchDownloadDialog 统一处理资源批次下载，DownloadDialog 仅用于 ProjectView 模型下载
+- 下载管理器：`cancel()` 同步执行（仅 abort controller），清理在 `finally` 块中；`start()` 和 `downloadChunks()` 均设置 `pendingCleanup`
+- IndexedDB 优化：`deleteSessionData` 使用 `IDBKeyRange.bound` prefix scan 替代全表扫描
+- Zero-chunks 修复：零分片早期返回不再重复调用 `deleteSession`
+- Loading 系统：`useDelayedLoading`（多 key）替代 `useSingleLoading` 于 ModelDetailView，支持独立 key 互不干扰
+- 路径工具：`utils/path.ts` 提供 `extractRelPath()`，全代码库统一使用
+- 超时配置：`LONG_TIMEOUT=1200000`（20min）用于 `downloadInit`/`downloadChunk`，`DEFAULT_TIMEOUT=60000` 用于其他操作
+- Session 清理：服务器端 `downloadCleanup` 端点 + 48h 定时清理，错误路径在 `finally` 中调用 `pendingCleanup`
 
 ## 四、数据模型
 

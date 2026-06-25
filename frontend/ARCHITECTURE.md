@@ -96,8 +96,8 @@
 | 接口 | 超时 |
 |------|------|
 | 普通 CRUD / 标注 / 轮询 | 30s |
-| ZIP `upload-chunk` / `download-init` / `downloadModelInit` | 20min |
-| `trainModel` / `runTest` | 20min |
+| `download-init` / `download-chunk` | 20min |
+| ZIP `upload-chunk` / `downloadModelInit` / `trainModel` / `runTest` | 20min |
 
 ### 工具层
 
@@ -105,9 +105,12 @@
 |------|------|
 | `composables/useDelayedLoading` | 500ms 延迟 loading，Set 多 key / 单 key 变体 |
 | `composables/useDebounceSearch` | 300ms 防抖搜索 |
+| `composables/useDelayedLoading` | 500ms 延迟 loading，Set 多 key / 单 key 变体 |
+| `composables/useDebounceSearch` | 300ms 防抖搜索 |
 | `composables/useDownloadManager` | 分片下载：init → 3 线程并行 → IndexedDB → Blob → 浏览器 |
 | `utils/download-db.ts` | IndexedDB 持久化：chunks + sessions，prefix scan 优化 |
 | `utils/model-status.ts` | 状态解析 / 标签类型 / 显示文本 / 按钮文本 / 角色标签 |
+| `utils/path.ts` | `extractRelPath()` 从 URL 路径提取 rel_path（去除 `/original/` 前缀） |
 | `utils/format.ts` | `formatDate()` 日期格式化 |
 
 ## 关键业务流程
@@ -150,7 +153,7 @@
 ### 分片下载
 
 ```
-用户                    DownloadDialog               后端              浏览器
+用户                    BatchDownloadDialog          后端              浏览器
  │                        │                             │                 │
  ├── 点击下载 ───────────► │                             │                 │
  │                        ├── download-init ─────────► │  打包 ZIP      │
@@ -176,6 +179,31 @@
 - **IndexedDB 持久化**（`zigaa-downloads`），刷新不丢失，断点续传
 - 速度计算：EMA（0.3 新 + 0.7 旧）
 - `startWithSession` 可跳过 init，用已有 session 数据直接下载
+- **BatchDownloadDialog 单对话框架构**：`BatchDownloadDialog` 统一处理所有多文件下载（资源批次下载 + 文件夹下载），`DownloadDialog` 仅用于 ProjectView 模型下载
+
+### 标注树文件夹下载
+
+```
+用户                    ImagePanel                  后端              浏览器
+ │                         │                           │                 │
+ ├── 点击文件夹下载图标 ──► │                           │                 │
+ │                         ├── 确认弹窗 ──────────────► │                 │
+ │                         │                           │                 │
+ │                        (FolderDownloadDialog)       │                 │
+ │                         ├── download-init ────────► │  arrange_name   │
+ │                         │◄── session_id + chunks ─── │                 │
+ │                         ├── download-chunk(3 并行)► │                 │
+ │                         │◄── chunk bytes + Range ─── │                 │
+ │                         │  IndexedDB 持久化          │                 │
+ │                         │  Blob 组装 + 浏览器下载    │                 │
+ │                         ├── download-cleanup ─────► │                 │
+ │◄── 1.5s 后自动关闭 ────── │                           │ ─────────────── │
+```
+
+- ZIP 命名：`{resourceType}_{arrangeName}.zip`（`/` 替换为 `_`）
+- 复用 `useDownloadManager` 管理进度/速度/ETA
+- `extractRelPath()` 从 URL 路径提取 `rel_path` 传给后端
+- 下载完成后 1.5s 自动关闭弹窗
 
 ### 标注系统 (Konva + Pinia)
 
@@ -314,9 +342,13 @@
 | 异步处理 | `upload-complete` 返回后轮询 `upload-status`，显示处理倒计时 |
 | 并发控制 | 同时最多 3 个分片上传（不同文件可并行） |
 
-### components/Download/DownloadDialog.vue — 分片下载组件
+### components/Download/DownloadDialog.vue — 模型分片下载组件
 
-模型或资源 ZIP 的分片下载，支持大文件。
+模型 ZIP 的分片下载，支持大文件。仅 ProjectView 使用（模型下载场景）。
+
+### components/Download/BatchDownloadDialog.vue — 资源批次下载组件
+
+资源（good/defect/test/template）ZIP 的分片下载，支持多批次顺序下载。
 
 | 功能 | 说明 |
 |------|------|
@@ -427,8 +459,10 @@ CodeMirror 6 包装组件，用于直接编辑标注 JSON 和模型参数。
 | `hasLoading()` | 是否有任何 loading 在进行 |
 
 **两种变体**：
-- `useDelayedLoading()` — 基于 `Set<string>`，支持多 key
-- `useSingleLoading()` — 单 key，适用于只有一个操作的页面
+- `useDelayedLoading()` — 基于 `Set<string>`，支持多 key，适用于多按钮并发（ProjectView、ModelDetailView）
+- `useSingleLoading()` — 单 key，适用于只有一个操作的页面（AdminPanel）
+
+**使用现状**：`ModelDetailView` 已从 `useSingleLoading` 迁移至 `useDelayedLoading`，支持多个独立 loading key（`delete-good`、`reprocess-good` 等）互不干扰。
 
 ## 前端状态流转
 

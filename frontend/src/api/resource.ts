@@ -1,6 +1,4 @@
-import client from './client'
-
-const LONG_TIMEOUT = 1200000
+import client, { LONG_TIMEOUT } from './client'
 
 // 磁盘空间检查
 export function checkDiskSpace(modelId: string, type: 'good' | 'defect' | 'test' | 'template') {
@@ -133,13 +131,14 @@ export function arrangeList(modelId: string, resourceType: string) {
 }
 
 export function downloadInit(modelId: string, resourceType: string, extra?: Record<string, any>) {
-  return client.post(`/resources/${modelId}/${resourceType}/download-init`, {}, { params: extra })
+  return client.post(`/resources/${modelId}/${resourceType}/download-init`, {}, { params: extra, timeout: LONG_TIMEOUT })
 }
 
 export function downloadChunk(modelId: string, resourceType: string, sessionId: string, chunkIndex: number, signal?: AbortSignal) {
   return client.get(`/resources/${modelId}/${resourceType}/download-chunk`, {
     params: { session_id: sessionId, chunk_index: chunkIndex },
     responseType: 'arraybuffer',
+    timeout: LONG_TIMEOUT,
     signal,
   })
 }

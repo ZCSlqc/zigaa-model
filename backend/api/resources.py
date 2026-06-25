@@ -688,7 +688,8 @@ def resource_download_init(model_id: str, resource_type: str, arrange_name: str 
     if arrange_name:
         # 按单个时间戳文件夹打包
         zip_path = _create_zip_from_arrange(model_id, resource_type, arrange_name)
-        filename = f"{resource_type}_{arrange_name}.zip"
+        arrange_name_filter = arrange_name.replace("/", "_")
+        filename = f"{resource_type}_{arrange_name_filter}.zip"
     else:
         # 兼容：全量打包（保留旧行为）
         src_dir = _get_resource_src_dir(model_id, resource_type)

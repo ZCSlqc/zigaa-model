@@ -16,7 +16,8 @@ frontend/src/
 ├── utils/
 │   ├── format.ts            # formatDate()
 │   ├── model-status.ts      # 模型状态解析/标签/文本/按钮 + 角色标签
-│   └── download-db.ts       # IndexedDB 分片下载持久化
+│   ├── download-db.ts       # IndexedDB 分片下载持久化（IDBKeyRange prefix scan）
+│   └── path.ts              # extractRelPath() 从 URL 路径提取 rel_path
 ├── stores/
 │   ├── auth.ts              # token/username/role + localStorage
 │   ├── project.ts           # projects/models + 模型操作（训练/测试/日志）
@@ -36,7 +37,8 @@ frontend/src/
 │   │   ├── ZipUpload.vue    # ZIP 多文件队列上传（分片/轮询/倒计时/取消）
 │   │   └── JsonUpload.vue   # 参数 JSON 上传
 │   ├── Download/
-│   │   └── DownloadDialog.vue # 下载进度弹窗（进度条/速度/ETA/取消）
+│   │   ├── DownloadDialog.vue      # 模型分片下载弹窗（ProjectView 使用）
+│   │   └── BatchDownloadDialog.vue # 资源批次/文件夹下载弹窗（多批次顺序下载）
 │   ├── Annotation/
 │   │   ├── Toolbar.vue      # 工具栏（模式/保存/删除/资源切换/标签显隐）
 │   │   ├── PreviewToolbar.vue # 预览模式工具栏（只读）
@@ -71,11 +73,7 @@ const { loadingActions, startLoading, stopLoading, isLoading, hasLoading } = use
 
 ### useSingleLoading()
 
-单 key 精简版，适用于单 loading 页面（AdminPanel、ModelDetailView）。
-
-```ts
-const { loadingAction, startLoading, stopLoading, isLoading } = useSingleLoading()
-```
+单 key 精简版，适用于单 loading 页面（AdminPanel）。`ModelDetailView` 已迁移至 `useDelayedLoading`。
 
 ### useDebounceSearch()
 
@@ -132,13 +130,15 @@ roleTagType(role)                   → 'danger' | 'warning' | 'info'
 IndexedDB (`zigaa-downloads`)，模块级连接缓存。
 
 ```ts
-saveChunk(sessionId, index, data)   // 保存分片
-getChunk(sessionId, index)          // 读取分片
-getAllDownloadedChunks(sessionId)   // 已下载索引（IDBKeyRange 优化）
-saveSession(record)                 // 保存会话元数据
-deleteSession(sessionId)            // 清理会话 + 所有分片
-getAllSessions()                    // 所有会话
+saveChunk(sessionId, index, data)          // 保存分片
+getChunk(sessionId, index)                 // 读取分片
+getAllDownloadedChunks(sessionId)          // 已下载索引（IDBKeyRange.bound prefix scan）
+saveSession(record)                        // 保存会话元数据
+deleteSession(sessionId)                   // 清理会话 + 所有分片（先 deleteSessionData prefix scan）
+getAllSessions()                           // 所有会话
 ```
+
+- `deleteSessionData` 使用 `IDBKeyRange.bound(sessionId + '_', sessionId + '\x60')` prefix scan，避免全表扫描
 
 ## Store 说明
 
@@ -159,9 +159,10 @@ modelId/resourceType/annotationData/initialSnapshot/savedSnapshot/sourceTree/dis
 - `selectImage(img)`: 先 save(oldImg) → 清空 annotationData → 设 currentImage（watch 中串行 loadImage → loadAnnotation）
 - `save(isSilent, isAuto)`: 三态比较跳过重复保存
 - `loadAnnotation(img)`: 从服务器加载，初始化三态
-- `deleteCurrentImage`/`deleteFolder`: 提取 rel_path 传给后端
+- `deleteCurrentImage`/`deleteFolder`: 使用 `extractRelPath()` 提取 rel_path 传给后端
 - `setMode(m)`: 仅在 select 模式启动 10s 自动保存定时器
 - `categoryFilter`: 控制 displayTree 过滤，TreeFile.category 始终有值
+- `onFolderRemoved(cb)`: 订阅文件夹删除事件，通知 UI 移除展开状态
 
 ## 构建配置
 

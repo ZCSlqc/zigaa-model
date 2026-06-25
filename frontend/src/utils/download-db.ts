@@ -70,14 +70,12 @@ export async function getChunk(sessionId: string, chunkIndex: number): Promise<A
 export async function deleteSessionData(sessionId: string): Promise<void> {
   const store = await tx(CHUNK_STORE, 'readwrite')
   return new Promise((resolve, reject) => {
-    const req = store.openCursor()
+    const range = IDBKeyRange.bound(sessionId + '_', sessionId + '`')
+    const req = store.openCursor(range)
     req.onsuccess = (event) => {
       const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result
       if (cursor) {
-        const key = (cursor.value as any).key as string
-        if (key.startsWith(sessionId + '_')) {
-          cursor.delete()
-        }
+        cursor.delete()
         cursor.continue()
       } else {
         resolve()

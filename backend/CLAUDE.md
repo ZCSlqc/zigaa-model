@@ -50,6 +50,10 @@ uploads 在项目根目录，不在 backend/ 下。路径布局见 [ARCHITECTURE
 
 `app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR))` 提供静态服务。
 
+## 下载查询参数
+
+- `arrange_name`：`download-init` 支持此查询参数，按指定文件夹打包 ZIP（标注树文件夹下载场景）
+
 ## 路径规范
 
 - `path`: URL 路径，格式 `/uploads/{model_id}/{resource_type}/original/{rel}`，用于显示/缩略图

@@ -39,6 +39,8 @@ npm run build    # vue-tsc → vite build
 - 树列表滚动置顶: 切换图片 / 折叠展开 / 全部展开 / 全部折叠时，高亮节点自动 scrollIntoView({ block: 'start' }) 置顶
 - 图片路径显示: 面板顶部"全部展开/全部折叠"按钮上方显示当前图片 rel_path（相对 original/ 的相对路径），最多 2 行，悬停完整路径
 - Tree 架构: sourceTree 为唯一真实数据源，displayTree 为 computed 视图层（`sourceTree.map(folder => {..., children: filter(children)})`），筛选时生成新浅拷贝数组
+- 文件夹下载: ImagePanel/TreeItem 支持点击下载文件夹，弹出确认 → 进度弹窗，复用 useDownloadManager
+- 路径工具: `utils/path.ts` 提供 `extractRelPath()`，从 URL 路径提取 rel_path（去除 `/original/` 前缀），全代码库统一使用
 - 分类筛选: 面板右侧下拉筛选（全部/未标完/待确认），displayTree 实时过滤，计数联动更新
 - canvas-title 区域: 图片信息（路径/通道/分辨率）+ 分类按钮（默认/未标完/待确认），互斥点击修改当前图片分类
 - 图片外绘制: canvas 内图片外的点自动 clamp 到 `[0, imgW]×[0, imgH]` 边界
@@ -79,6 +81,22 @@ npm run build    # vue-tsc → vite build
 - 不加 `:loading-text`，保留原按钮文字
 - `hasLoading()` 判断是否有任何操作进行中，用于 `:disabled` 互斥兄弟按钮
 - Dialog 内按钮如需即时反馈，使用独立 ref 绕过 500ms 延迟
+- `useDelayedLoading()` 支持多 key（ProjectView、ModelDetailView），`useSingleLoading()` 单 key（AdminPanel）
+
+## 分片下载
+
+- `useDownloadManager` 管理所有下载状态（percentage/speed/eta/status）
+- `cancel()` 仅设置 `isActive=false` + `controller.abort()`，是同步操作
+- 清理在 `finally` 块中执行：`pendingCleanup` 在 `start()`/`downloadChunks()` 中设置，无论成功失败都调用
+- `start()` 调用 `downloadInit` → `downloadChunks`；`startWithSession()` 跳过 init 直接下载
+- `finishDownload`：Blob 组装 → 浏览器下载 → 发 `download-finished` 事件 → 后台异步 `deleteSession`
+- 大文件（> chunk*200）先尝试 FileSystem API，失败回退 Blob
+- **超时配置**：`downloadInit`/`downloadChunk` 使用 `LONG_TIMEOUT=1200000`（20min），其他操作 `DEFAULT_TIMEOUT=60000`
+
+## 下载组件
+
+- `BatchDownloadDialog.vue`：资源批次下载 + 文件夹下载，多批次顺序执行，每批次等待弹窗完成
+- `DownloadDialog.vue`：模型下载（ProjectView），单一文件下载场景
 
 ## 板块规范
 

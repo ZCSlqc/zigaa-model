@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getResourceTree, getAnnotation, saveAnnotation, deleteImage, deleteFolder, getImageInfo, updateImageMsg } from '../api/resource'
+import { getResourceTree, getAnnotation, saveAnnotation, deleteImage, deleteFolder, updateImageMsg } from '../api/resource'
 import { getModel } from '../api/model'
+import { extractRelPath } from '../utils/path'
 import { ElMessage } from 'element-plus'
 
 export interface AnnotationData {
@@ -123,20 +124,6 @@ export const useAnnotationStore = defineStore('annotation', () => {
     return 'children' in node
   }
 
-  function extractRelPath(fullPath: string): string {
-    // 从 tree 节点路径中提取相对于 original/ 的相对路径
-    // 格式如：upload/model/type/timestamp/folder/file.jpg → timestamp/folder/file.jpg
-    const idx = fullPath.indexOf('/original/')
-    if (idx !== -1) return fullPath.slice(idx + 10)
-    // 通用提取：去掉前缀 upload/{model}/{type}/
-    const parts = fullPath.split('/')
-    // 找到 'original' 之后的部分
-    const oi = parts.indexOf('original')
-    if (oi >= 0) return parts.slice(oi + 1).join('/')
-    // 兜底：去掉前缀 'upload/'
-    if (parts[0] === 'upload') return parts.slice(1).join('/')
-    return fullPath
-  }
 
   // Flatten tree to all files
   const allImages = computed(() => {
@@ -437,9 +424,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
   }
 
   async function deleteFolderFn(folderPath: string) {
-    // 提取相对路径：/uploads/{model}/{type}/original/{rel} → {rel}
-    const idx = folderPath.indexOf('/original/')
-    const relPath = idx !== -1 ? folderPath.slice(idx + 10) : folderPath
+    const relPath = extractRelPath(folderPath)
     try {
       await deleteFolder(modelId.value, resourceType.value, relPath)
       ElMessage.success('文件夹已删除')
@@ -489,8 +474,8 @@ export const useAnnotationStore = defineStore('annotation', () => {
     updateImageMsg: updateImageMsgFn,
     clearAutoSaveTimers,
     scheduleAutoSave,
-    getMode: () => _mode.value,
     setMode,
     labelHistory, addLabelToHistory, removeLabelFromHistory,
+    deleteFolder: deleteFolderFn,
   }
 })

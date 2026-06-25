@@ -12,7 +12,9 @@
       />
 
       <div class="preview-body">
-        <ImagePanel />
+        <ImagePanel
+          @delete-folder="store.deleteFolder"
+        />
 
         <div class="canvas-container" ref="containerRef" @contextmenu.prevent>
           <div v-if="store.currentImage" class="canvas-title">

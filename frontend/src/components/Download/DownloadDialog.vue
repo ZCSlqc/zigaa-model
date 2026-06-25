@@ -86,14 +86,13 @@ function openDownloadWithSession(config: DownloadConfig, sessionData: DownloadSe
   startWithSession(config, sessionData)
 }
 
-async function handleCancel() {
-  await cancel()
+function handleCancel() {
+  cancel()
 }
 
 function handleClose() {
   visible.value = false
   reset()
-  window.dispatchEvent(new CustomEvent('download-dialog-closed'))
 }
 
 function onDownloadFinished() {

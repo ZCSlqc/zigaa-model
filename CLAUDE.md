@@ -34,6 +34,7 @@
 - JWT Bearer Token 24h，角色 `user`/`advanced`/`admin`，401 → 清 localStorage → 跳转 /login
 - 接口 RESTful，错误 `{ "detail": "..." }`，分页 `page`/`page_size`
 - JWT_SECRET 必须 .env 设置，无 fallback
+- 路径提取统一使用 `utils/path.ts` 的 `extractRelPath()`，从 URL 路径提取 rel_path（去除 `/original/` 前缀）
 - **后端改前端不动** — 前端不写 mapper 适配层，唯一例外是展示层格式化
 - 代码注释默认不写，仅 WHY 不直观时才加
 

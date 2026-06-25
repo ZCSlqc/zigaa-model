@@ -1,7 +1,8 @@
 import axios from 'axios'
 import router from '../router'
 
-const DEFAULT_TIMEOUT = 30000
+export const LONG_TIMEOUT = 1200000
+export const DEFAULT_TIMEOUT = 60000
 
 const client = axios.create({
   baseURL: '/api',

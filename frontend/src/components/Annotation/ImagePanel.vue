@@ -31,6 +31,7 @@
         @toggle-folder="toggleFolder"
         @select-image="selectImage"
         @delete-folder="confirmDeleteFolder"
+        @download-folder="startDownloadFolder"
         @show-category-menu="showCategoryMenu"
       />
     </div>
@@ -54,16 +55,33 @@
         </div>
       </div>
     </div>
+
+    <!-- Folder download progress dialog -->
+    <BatchDownloadDialog
+      ref="batchDownloadRef"
+      v-model:visible="folderDownloadVisible"
+      :model-id="store.modelId.value || (route.params.modelId as string)"
+      :resource-type="store.resourceType.value || (route.query.type as string) || 'defect'"
+      :arrange-names="folderDownloadArrangement ? [folderDownloadArrangement] : []"
+      :download-api="folderDownloadApi"
+      :auto-start="true"
+      @all-done="onFolderDownloadDone"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted, nextTick } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { useRoute } from 'vue-router'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { useAnnotationStore, type TreeNode, type TreeFile, type TreeFolder } from '../../stores/annotation'
 import TreeItem from './TreeItem.vue'
+import { downloadInit, downloadChunk, downloadCleanup } from '../../api/resource'
+import { extractRelPath } from '../../utils/path'
+import BatchDownloadDialog from '../Download/BatchDownloadDialog.vue'
 
 const store = useAnnotationStore()
+const route = useRoute()
 const imageListRef = ref<HTMLElement | null>(null)
 
 // ── Category filter sync (双向绑定) ──
@@ -152,7 +170,6 @@ function scrollIntoSelected() {
 function toggleFolder(path: string) {
   const ef = expandedFolders.value
   ef.has(path) ? ef.delete(path) : ef.add(path)
-  // Trigger re-render since Set doesn't trigger reactivity
   expandedFolders.value = new Set(ef)
   scrollIntoSelected()
 }
@@ -178,6 +195,41 @@ async function confirmDeleteFolder(folderPath: string) {
     })
     await store.deleteFolder(folderPath)
   } catch { /* cancelled */ }
+}
+
+// ── Folder download ──
+const folderDownloadVisible = ref(false)
+const folderDownloadArrangement = ref('')
+const batchDownloadRef = ref<{ openDialog: () => void } | null>(null)
+
+const folderDownloadApi = {
+  init: (modelId: string, resourceType: string, arrangeName: string) => downloadInit(modelId, resourceType, { arrange_name: arrangeName }),
+  chunk: (modelId: string, resourceType: string, sessionId: string, chunkIndex: number, signal?: AbortSignal) => downloadChunk(modelId, resourceType, sessionId, chunkIndex, signal),
+  cleanup: (modelId: string, resourceType: string, sessionId: string) => downloadCleanup(modelId, resourceType, sessionId),
+}
+
+function onFolderDownloadDone() {
+  folderDownloadArrangement.value = ''
+}
+
+async function startDownloadFolder(folderPath: string) {
+  const folderName = folderPath.split('/').pop() || folderPath
+  try {
+    await ElMessageBox.confirm(`确定下载文件夹 "${folderName}"？将打包为 ZIP 文件。`, '确认下载', {
+      confirmButtonText: '下载', cancelButtonText: '取消', type: 'info',
+    })
+  } catch { return }
+
+  const arrangeName = extractRelPath(folderPath)
+  const resourceType = store.resourceType.value || (route.query.type as string) || 'defect'
+  const modelId = store.modelId.value || (route.params.modelId as string)
+  if (!modelId) {
+    ElMessage.error('请先选择模型')
+    return
+  }
+
+  folderDownloadArrangement.value = arrangeName
+  batchDownloadRef.value?.openDialog()
 }
 
 // Auto-expand on first load
@@ -316,5 +368,52 @@ onUnmounted(() => { offFolderRemoved() })
   flex-shrink: 0;
   &.undone { background: #e6a23c }
   &.pending { background: #409eff }
+}
+
+/* Folder download dialog */
+.folder-download-dialog {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.download-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.progress-info {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.info-item {
+  white-space: nowrap;
+}
+
+.progress-size {
+  font-size: 12px;
+  color: var(--text-regular);
+}
+
+.download-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+}
+
+.error-text {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 14px;
 }
 </style>

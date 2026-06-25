@@ -11,6 +11,9 @@
       </span>
       <el-icon class="folder-icon"><Folder /></el-icon>
       <span class="label">{{ node.name }}</span>
+      <el-icon class="download-folder-icon" @click.stop="emit('downloadFolder', (node as TreeFolder).path)">
+        <Download />
+      </el-icon>
       <el-icon class="delete-folder-icon" @click.stop="emit('deleteFolder', (node as TreeFolder).path)">
         <Delete />
       </el-icon>
@@ -51,6 +54,7 @@
         :selected-path="selectedPath"
         @toggle-folder="$emit('toggleFolder', $event)"
         @select-image="$emit('selectImage', $event)"
+        @download-folder="$emit('downloadFolder', $event)"
         @delete-folder="$emit('deleteFolder', $event)"
         @show-category-menu="$emit('showCategoryMenu', $event)"
       />
@@ -60,7 +64,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ArrowRight, ArrowDown, Folder, Picture, Delete } from '@element-plus/icons-vue'
+import { ArrowRight, ArrowDown, Folder, Picture, Delete, Download } from '@element-plus/icons-vue'
 import type { TreeNode, TreeFolder, TreeFile } from '../../stores/annotation'
 import { useAnnotationStore } from '../../stores/annotation'
 
@@ -75,6 +79,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggleFolder: [path: string]
   selectImage: [img: TreeFile]
+  downloadFolder: [path: string]
   deleteFolder: [path: string]
   showCategoryMenu: [data: { node: MouseEvent; path: string }]
 }>()
@@ -222,6 +227,7 @@ function toggleFolder() {
       color: #fff;
     }
 
+    .download-folder-icon,
     .delete-folder-icon {
       color: #fff;
       opacity: 0;
@@ -339,6 +345,19 @@ function toggleFolder() {
   font-size: 13px;
 }
 
+.download-folder-icon {
+  font-size: 14px;
+  color: #67c23a;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+
+  &:hover {
+    color: #85ce61;
+  }
+}
+
 .delete-folder-icon {
   font-size: 14px;
   color: var(--text-secondary);
@@ -352,6 +371,7 @@ function toggleFolder() {
   }
 }
 
+.tree-item > div:first-child:hover .download-folder-icon,
 .tree-item > div:first-child:hover .delete-folder-icon {
   opacity: 1;
 }

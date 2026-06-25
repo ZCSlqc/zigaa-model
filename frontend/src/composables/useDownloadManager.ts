@@ -193,6 +193,10 @@ export function useDownloadManager() {
         state.error = e.response?.data?.detail || e.message || '下载失败'
       }
     } finally {
+      if (pendingCleanup) {
+        try { await pendingCleanup() } catch { /* ignore */ }
+        pendingCleanup = null
+      }
       isActive = false
       controller = null
     }
@@ -215,6 +219,10 @@ export function useDownloadManager() {
         state.error = e.response?.data?.detail || e.message || '下载失败'
       }
     } finally {
+      if (pendingCleanup) {
+        try { await pendingCleanup() } catch { /* ignore */ }
+        pendingCleanup = null
+      }
       isActive = false
       controller = null
     }
@@ -253,11 +261,11 @@ export function useDownloadManager() {
     a.click()
     URL.revokeObjectURL(url)
     document.body.removeChild(a)
-    await deleteSession(sessionId)
+    // 先设状态 + 发事件（给前端 UI 立即响应），deleteSession 在后台异步执行
     state.status = 'complete'
     state.percentage = 100
-    // 通知 DownloadDialog 自动关闭
     window.dispatchEvent(new CustomEvent('download-finished'))
+    deleteSession(sessionId).catch(() => {})  // 不阻塞
   }
 
   async function finishDownloadFileSystem(sessionId: string, totalChunks: number): Promise<void> {
@@ -278,21 +286,17 @@ export function useDownloadManager() {
       }
     }
     await writable.close()
-    await deleteSession(sessionId)
     state.status = 'complete'
     state.percentage = 100
     window.dispatchEvent(new CustomEvent('download-finished'))
+    deleteSession(sessionId).catch(() => {})
   }
 
-async function cancel(): Promise<void> {
+function cancel(): void {
     isActive = false
     if (controller) {
       controller.abort()
       controller = null
-    }
-    if (pendingCleanup) {
-      try { await pendingCleanup() } catch { /* ignore */ }
-      pendingCleanup = null
     }
   }
 

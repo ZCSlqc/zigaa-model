@@ -348,7 +348,6 @@
         <pre class="logs-content">{{ testLogsContent || '暂无日志' }}</pre>
       </el-dialog>
 
-      <DownloadDialog ref="downloadDialogRef" />
       <BatchDownloadDialog
         ref="batchDownloadDialogRef"
         :model-id="modelId"
@@ -389,9 +388,8 @@ import AppLayout from "../components/Layout/AppLayout.vue";
 import ZipUpload from "../components/Upload/ZipUpload.vue";
 import JsonUpload from "../components/Upload/JsonUpload.vue";
 import JsonEditor from "../components/Editor/JsonEditor.vue";
-import DownloadDialog from "../components/Download/DownloadDialog.vue";
 import BatchDownloadDialog from "../components/Download/BatchDownloadDialog.vue";
-import { useSingleLoading } from "../composables/useDelayedLoading";
+import { useDelayedLoading } from "../composables/useDelayedLoading";
 import { useProjectStore } from "../stores/project";
 import { resolveDataStatus, dataStatusTagType, dataStatusDisplayText, resolveTrainingStatus, trainingStatusTagType, trainingStatusDisplayText, resolveTestStatus, testStatusTagType, testStatusDisplayText } from "../utils/model-status";
 import { getModel } from "../api/model";
@@ -429,7 +427,7 @@ const model = ref({
   packages: [] as any[],
 });
 
-const { loadingAction, startLoading, stopLoading, isLoading } = useSingleLoading();
+const { startLoading, stopLoading, isLoading } = useDelayedLoading();
 
 const dataStatusType = computed(() => dataStatusTagType(resolveDataStatus(model.value.status)))
 const dataStatusText = computed(() => dataStatusDisplayText(resolveDataStatus(model.value.status)))
@@ -468,7 +466,6 @@ const templateErrors = ref<any[]>([]);
 // 上传状态
 const uploading = ref<"good" | "defect" | "test" | "template" | null>(null);
 const downloading = ref<"good" | "defect" | "parameter" | "test" | "template" | null>(null);
-const downloadDialogRef = ref<InstanceType<typeof DownloadDialog>>();
 const batchDownloadDialogRef = ref<InstanceType<typeof BatchDownloadDialog>>();
 
 // Batch download state
@@ -538,16 +535,33 @@ function clearReprocessTimers() {
 function closeReprocessDialog() {
   showReprocessDialog.value = false;
   clearReprocessTimers();
+  stopLoading();
 }
 
 function cancelReprocess() {
   // 轮询是单向的，取消不了后端任务，只需关闭弹窗
   clearReprocessTimers();
   showReprocessDialog.value = false;
+  stopLoading();
 }
 
 async function handleReprocess(type: "good" | "defect" | "test" | "template") {
   const typeNames: Record<string, string> = { good: '良品', defect: '缺陷', test: '测试', template: '模板' }
+
+  // 磁盘空间检查
+  let freeGb: number
+  try {
+    const res: any = await checkDiskSpace(modelId.value, type)
+    freeGb = res.data.free_gb
+  } catch {
+    ElMessage.warning('磁盘空间检查失败，跳过')
+    return
+  }
+  if (freeGb < 2) {
+    ElMessage.warning(`剩余空间 ${freeGb.toFixed(1)}GB，不足 2GB，请联系管理员`)
+    return
+  }
+
   try {
     await ElMessageBox.confirm(
       `确定要对"${typeNames[type]}"资源重新入库吗？将重新生成压缩图和预览图。`,
@@ -556,6 +570,7 @@ async function handleReprocess(type: "good" | "defect" | "test" | "template") {
     );
   } catch { return; }
 
+  startLoading('reprocess-' + type)
   reprocessStatus.value = 'processing';
   reprocessMessage.value = '正在重新入库...';
   reprocessError.value = '';
@@ -605,6 +620,8 @@ async function handleReprocess(type: "good" | "defect" | "test" | "template") {
     reprocessStatus.value = 'failed';
     reprocessMessage.value = '重新入库失败';
     reprocessError.value = e.response?.data?.detail || '操作失败';
+  } finally {
+    stopLoading()
   }
 }
 
@@ -902,17 +919,6 @@ function getTypeLoaded(type: string): boolean {
 onMounted(() => {
   fetchModel();
 
-  // Batch download event bridge
-  window.addEventListener('batch-download-start', (e: any) => {
-    const { modelId: mid, resourceType: rt, filename, session, api } = e.detail;
-    downloadDialogRef.value?.openDownloadWithSession(
-      { modelId: mid, resourceType: rt, filename, api: api as any },
-      session,
-    );
-  });
-  window.addEventListener('batch-download-cancel', () => {
-    downloadDialogRef.value?.cancel?.();
-  });
 });
 </script>
 

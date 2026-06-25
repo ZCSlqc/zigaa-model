@@ -84,7 +84,7 @@
 | `auth` | `/api/auth` | 登录/登出/用户信息/改密码 |
 | `projects` | `/api/projects` | 项目 CRUD |
 | `models` | `/api/models` | 模型 CRUD + 训练/测试/日志/状态轮询/模型下载 |
-| `resources` | `/api/resources` | ZIP 分片上传/下载/删除 + 参数 JSON + 磁盘检查 + 目录树 |
+| `resources` | `/api/resources` | ZIP 分片上传/下载/删除 + 参数 JSON + 磁盘检查 + 目录树 + arrange-list |
 | `annotations` | `/api/annotations` | 标注 GET/PUT/DELETE + 文件夹删除 |
 | `admin` | `/api/admin` | 管理后台（用户/项目 CRUD） |
 
@@ -166,6 +166,7 @@
 
 **关键点**：
 - **直接打包 original/**：`_get_resource_src_dir` 返回 `uploads/{model_id}/{type}/original/` 整体，不取子目录
+- **arrange_name 查询参数**：`download-init` 支持 `arrange_name` 参数，按指定文件夹打包（标注树文件夹下载场景）
 - **8MB chunk**，ZIP_STORED（无压缩省 CPU）
 - **`threading.Lock`** 保护 meta（`flock` 基于 PID，同进程多线程不互斥）
 - **原子写入**：先写 `.tmp` 再 `os.replace`，避免并发读到空文件
