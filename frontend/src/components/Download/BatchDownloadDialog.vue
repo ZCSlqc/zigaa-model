@@ -79,22 +79,9 @@ const visible = ref(false)
 const selected = ref<string[]>([])
 const downloading = ref(false)
 const itemStatuses = ref<Record<string, 'idle' | 'downloading' | 'complete' | 'error'>>({})
-let downloadDialogClosedResolver: (() => void) | null = null
 
 // 列表最大高度
 const listMaxHeight = ref(360)
-
-// 监听 DownloadDialog 关闭事件
-function setupDialogCloseListener() {
-  const handler = () => {
-    if (downloadDialogClosedResolver) {
-      downloadDialogClosedResolver()
-      downloadDialogClosedResolver = null
-    }
-  }
-  window.addEventListener('download-dialog-closed', handler)
-}
-setupDialogCloseListener()
 
 const dialogTitle = computed(() => {
   return `选择要下载的批次 — ${props.resourceLabel || props.resourceType}`
@@ -136,33 +123,7 @@ const toggleSelectAll = () => {
   }
 }
 
-// 等待 DownloadDialog 的弹窗关闭（visible 变 false）
-function waitForDialogClose(timeout = 300000): Promise<void> {
-  return new Promise((resolve) => {
-    const start = Date.now()
-    const check = () => {
-      const ref = document.querySelector('[data-dialog-download]') as any
-      const el = ref?.__vue_parent_component__?.vnode?.el as HTMLElement
-      if (!el) {
-        // 降级：用 setTimeout 等待
-        setTimeout(resolve, 1500)
-        return
-      }
-      if (!el.closest('.el-dialog')) {
-        resolve()
-        return
-      }
-      if (Date.now() - start > timeout) {
-        resolve()
-        return
-      }
-      setTimeout(check, 300)
-    }
-    check()
-  })
-}
-
-// 等待 DownloadDialog 状态结束
+// 等待下载完成（数据写入+触发浏览器下载）
 function waitForComplete(timeout = 300000): Promise<boolean> {
   return new Promise((resolve) => {
     const start = Date.now()
@@ -207,8 +168,7 @@ async function startDownload() {
         const initRes = await props.downloadApi.init(props.modelId, props.resourceType, arrangeName)
         const sessionData = initRes.data as DownloadSessionData
 
-        // 2. 打开 DownloadDialog 显示进度（这会弹出独立的 el-dialog）
-        //    通过调用 window.dispatchEvent 通知顶层打开 DownloadDialog
+        // 2. 打开 DownloadDialog 显示进度
         window.dispatchEvent(new CustomEvent('batch-download-start', {
           detail: {
             modelId: props.modelId,
@@ -225,7 +185,7 @@ async function startDownload() {
           }
         }))
 
-        // 3. 等待下载完成
+        // 3. 等待下载完成（文件已触发浏览器下载）
         const finished = await waitForComplete()
         if (!finished) {
           throw new Error('下载超时')
@@ -242,13 +202,8 @@ async function startDownload() {
           throw new Error(state.status === 'cancelled' ? '已取消' : '下载失败')
         }
 
-        // 6. 清理 + 等弹窗关闭
+        // 6. 重置状态，然后立即开始下一个（不等弹窗关闭）
         resetManager()
-        await new Promise<void>((resolve) => {
-          downloadDialogClosedResolver = () => resolve()
-          // 3秒超时兜底
-          setTimeout(resolve, 3000)
-        })
       } catch (e: any) {
         const msg = e?.response?.data?.detail || e?.message || '下载失败'
         itemStatuses.value[arrangeName] = 'error'
@@ -256,12 +211,7 @@ async function startDownload() {
           cancelDownloadMgr()
         }
         ElMessage.error(`批次 ${arrangeName} 下载失败: ${msg}`)
-        // 清理 + 兜底等弹窗关闭
         resetManager()
-        await new Promise<void>((resolve) => {
-          downloadDialogClosedResolver = () => resolve()
-          setTimeout(resolve, 3000)
-        })
       }
     }
   } finally {
