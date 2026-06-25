@@ -95,6 +95,12 @@ const completedCount = computed(() => {
   return Object.values(itemStatuses.value).filter(s => s === 'complete').length
 })
 
+const downloadingNames = computed(() => {
+  return Object.entries(itemStatuses.value)
+    .filter(([, s]) => s === 'downloading')
+    .map(([n]) => n)
+})
+
 const summaryPercentage = computed(() => {
   if (selected.value.length === 0) return 0
   return Math.round((completedCount.value / selected.value.length) * 100)
