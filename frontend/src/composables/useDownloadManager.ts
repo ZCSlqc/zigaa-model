@@ -256,6 +256,8 @@ export function useDownloadManager() {
     await deleteSession(sessionId)
     state.status = 'complete'
     state.percentage = 100
+    // 通知 DownloadDialog 自动关闭
+    window.dispatchEvent(new CustomEvent('download-finished'))
   }
 
   async function finishDownloadFileSystem(sessionId: string, totalChunks: number): Promise<void> {
@@ -279,6 +281,7 @@ export function useDownloadManager() {
     await deleteSession(sessionId)
     state.status = 'complete'
     state.percentage = 100
+    window.dispatchEvent(new CustomEvent('download-finished'))
   }
 
 async function cancel(): Promise<void> {

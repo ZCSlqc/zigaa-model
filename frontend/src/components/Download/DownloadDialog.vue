@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDownloadManager, type DownloadSessionData } from '../../composables/useDownloadManager'
 import type { DownloadConfig } from '../../composables/useDownloadManager'
 
@@ -95,6 +95,22 @@ function handleClose() {
   reset()
   window.dispatchEvent(new CustomEvent('download-dialog-closed'))
 }
+
+function onDownloadFinished() {
+  if (visible.value) {
+    // 短暂延迟让用户看到 100% 完成状态
+    setTimeout(() => {
+      handleClose()
+    }, 500)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('download-finished', onDownloadFinished)
+})
+onUnmounted(() => {
+  window.removeEventListener('download-finished', onDownloadFinished)
+})
 
 defineExpose({ openDownload, openDownloadWithSession, cancel })
 </script>
