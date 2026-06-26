@@ -111,12 +111,6 @@ export function deleteImage(modelId: string, resourceType: string, imagePath: st
   return client.delete(`/annotations/${modelId}/${resourceType}/${imagePath}`)
 }
 
-export function downloadImage(modelId: string, resourceType: string, imagePath: string) {
-  return client.get(`/annotations/${modelId}/${resourceType}/${imagePath}/download-file`, {
-    responseType: 'blob',
-  })
-}
-
 export function deleteFolder(modelId: string, resourceType: string, folderPath: string) {
   return client.delete(`/annotations/${modelId}/${resourceType}/folder/${folderPath}`)
 }
