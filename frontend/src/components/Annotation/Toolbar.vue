@@ -67,8 +67,16 @@
 
     <div class="toolbar-sep"></div>
 
-    <!-- 删除图片 -->
+    <!-- 图片操作 -->
     <div v-if="hasImage" class="toolbar-group">
+      <el-button
+        size="small"
+        class="btn-download"
+        :loading="loadingDownloadImage"
+        @click="emit('downloadImage')"
+      >
+        下载图片
+      </el-button>
       <el-button
         size="small"
         class="btn-delete-img"
@@ -187,6 +195,7 @@ const props = defineProps<{
   loadingSave?: boolean;
   loadingReset?: boolean;
   loadingDeleteImage?: boolean;
+  loadingDownloadImage?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -199,6 +208,7 @@ const emit = defineEmits<{
   toggleLabels: [];
   toggleEdges: [];
   deleteImage: [];
+  downloadImage: [];
 }>();
 
 function setMode(m: string) {
@@ -386,6 +396,17 @@ async function confirmDeleteImage() {
   &:disabled {
     opacity: 0.5 !important;
     pointer-events: none !important;
+  }
+}
+
+.btn-download {
+  background: #67c23a !important;
+  color: #fff !important;
+  border-color: #67c23a !important;
+
+  &:hover {
+    background: #85ce61 !important;
+    border-color: #85ce61 !important;
   }
 }
 

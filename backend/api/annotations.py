@@ -153,6 +153,31 @@ def _cleanup_and_update_ledger(model_id: str, resource_type: str, resource_dir: 
 # ── 路由 ─────────────────────────────────────────────
 
 
+@router.get("/{model_id}/{resource_type}/{image_path:path}/download")
+def download_image(model_id: str, resource_type: str, image_path: str,
+                   db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Download image + annotation JSON as base64 blobs in one response."""
+    import base64
+    from fastapi.responses import Response
+    check_model_owner(model_id, user["user_id"], db)
+    resource_dir = get_resource_dir(model_id, resource_type)
+    orig_path = os.path.join(resource_dir, "original", image_path)
+    if not os.path.isfile(orig_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    with open(orig_path, "rb") as f:
+        image_b64 = base64.b64encode(f.read()).decode("ascii")
+
+    annotation_b64 = None
+    ann_path = _get_annotation_path(model_id, resource_type, image_path, db)
+    if os.path.exists(ann_path):
+        with open(ann_path, "rb") as f:
+            annotation_b64 = base64.b64encode(f.read()).decode("ascii")
+
+    payload = {"image": image_b64, "annotation": annotation_b64}
+    return Response(content=json.dumps(payload), media_type="application/json")
+
+
 @router.get("/{model_id}/{resource_type}/{image_path:path}")
 def get_annotation(model_id: str, resource_type: str, image_path: str,
                    db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
@@ -284,6 +309,7 @@ def delete_image(model_id: str, resource_type: str, image_path: str,
     _cleanup_and_update_ledger(model_id, resource_type, resource_dir, [image_path], db)
     db.commit()
     return {"success": True}
+
 
 
 @router.patch("/{model_id}/{resource_type}/msg/{image_path:path}")

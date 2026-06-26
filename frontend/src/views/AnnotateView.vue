@@ -14,6 +14,7 @@
         :loading-save="loadingSave"
         :loading-reset="loadingReset"
         :loading-delete-image="loadingDeleteImage"
+        :loading-download-image="isLoading('download-image')"
         @set-mode="(m) => setMode(m as any)"
         @delete-all="deleteAnnotation"
         @reset-annotation="resetAnnotation"
@@ -22,6 +23,7 @@
         @toggle-labels="showLabels = !showLabels"
         @toggle-edges="showEdges = !showEdges"
         @delete-image="deleteImage"
+        @download-image="downloadImage"
       />
 
       <div class="annotate-body">
@@ -246,6 +248,8 @@ import AppLayout from '../components/Layout/AppLayout.vue'
 import Toolbar from '../components/Annotation/Toolbar.vue'
 import ImagePanel from '../components/Annotation/ImagePanel.vue'
 import { useAnnotationStore } from '../stores/annotation'
+import { downloadImage as apiDownloadImage } from '../api/resource'
+import client from '../api/client'
 
 const route = useRoute()
 const router = useRouter()
@@ -312,14 +316,16 @@ let loadingTarget: 'save' | 'reset' | 'delete-image' | null = null
 const loadingSave = ref(false)
 const loadingReset = ref(false)
 const loadingDeleteImage = ref(false)
+const loadingDownloadImage = ref(false)
 
-function startLoading(target: 'save' | 'reset' | 'delete-image') {
+function startLoading(target: 'save' | 'reset' | 'delete-image' | 'download-image') {
   stopLoading()
   loadingTarget = target
   loadingTimer = setTimeout(() => {
     if (loadingTarget === 'save') loadingSave.value = true
     else if (loadingTarget === 'reset') loadingReset.value = true
-    else loadingDeleteImage.value = true
+    else if (loadingTarget === 'delete-image') loadingDeleteImage.value = true
+    else if (loadingTarget === 'download-image') loadingDownloadImage.value = true
   }, 500)
 }
 function stopLoading() {
@@ -328,6 +334,11 @@ function stopLoading() {
   loadingSave.value = false
   loadingReset.value = false
   loadingDeleteImage.value = false
+  loadingDownloadImage.value = false
+}
+function isLoading(target: string): boolean {
+  if (target === 'download-image') return loadingDownloadImage.value
+  return false
 }
 
 // Hover state for interactive UI elements
@@ -1091,6 +1102,52 @@ async function deleteImage() {
   startLoading('delete-image')
   await store.deleteCurrentImage()
   stopLoading()
+}
+
+function base64ToBlob(b64: string, mime: string) {
+  const bin = window.atob(b64)
+  const arr = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+  return new Blob([arr], { type: mime })
+}
+
+async function downloadImage() {
+  if (!store.currentImage) return
+  startLoading('download-image')
+  try {
+    const token = localStorage.getItem('token')
+    const url = `/api/annotations/${modelId.value}/${store.resourceType}/${encodeURIComponent(store.currentImage.rel_path)}/download`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) throw new Error('下载失败')
+    const data = await res.json()
+
+    // 下载图片
+    const imgBlob = base64ToBlob(data.image, 'image/*')
+    const imgBlobUrl = URL.createObjectURL(imgBlob)
+    const a1 = document.createElement('a')
+    a1.href = imgBlobUrl
+    a1.download = store.currentImage.name
+    a1.click()
+    URL.revokeObjectURL(imgBlobUrl)
+
+    // 下载标注 JSON（如果有）
+    if (data.annotation) {
+      const jsonBlob = base64ToBlob(data.annotation, 'application/json')
+      const jsonBlobUrl = URL.createObjectURL(jsonBlob)
+      const a2 = document.createElement('a')
+      a2.href = jsonBlobUrl
+      a2.download = store.currentImage.name.replace(/\.\w+$/, '.json')
+      a2.click()
+      URL.revokeObjectURL(jsonBlobUrl)
+    }
+
+    ElMessage.success('下载成功')
+  } catch (e: any) {
+    ElMessage.error(e.message || '下载失败')
+    return
+  } finally {
+    stopLoading()
+  }
 }
 
 function onSwitchResource(type: 'good' | 'defect') {

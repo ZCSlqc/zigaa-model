@@ -7,8 +7,10 @@
         :has-image="!!store.currentImage"
         :image-name="store.currentImage?.name"
         :loading-delete-image="loadingDeleteImage"
+        :loading-download-image="loadingDownloadImage"
         @switch-resource="onSwitchResource"
         @delete-image="deleteImage"
+        @download-image="downloadImage"
       />
 
       <div class="preview-body">
@@ -108,6 +110,7 @@ import AppLayout from '../components/Layout/AppLayout.vue'
 import PreviewToolbar from '../components/Annotation/PreviewToolbar.vue'
 import ImagePanel from '../components/Annotation/ImagePanel.vue'
 import { useAnnotationStore } from '../stores/annotation'
+import client from '../api/client'
 
 const route = useRoute()
 const router = useRouter()
@@ -136,6 +139,7 @@ const lastPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
 // Loading
 let loadingTimer: ReturnType<typeof setTimeout> | null = null
 const loadingDeleteImage = ref(false)
+const loadingDownloadImage = ref(false)
 
 function startLoading() {
   if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null }
@@ -272,6 +276,52 @@ async function deleteImage() {
   startLoading()
   await store.deleteCurrentImage()
   stopLoading()
+}
+
+async function downloadImage() {
+  if (!store.currentImage) return
+  loadingDownloadImage.value = true
+  try {
+    const token = localStorage.getItem('token')
+    const url = `/api/annotations/${modelId.value}/${store.resourceType}/${encodeURIComponent(store.currentImage.rel_path)}/download`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) throw new Error('下载失败')
+    const data = await res.json()
+
+    function b64ToBlob(b64: string, mime: string) {
+      const bin = window.atob(b64)
+      const arr = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+      return new Blob([arr], { type: mime })
+    }
+
+    // 下载图片
+    const imgBlob = b64ToBlob(data.image, 'image/*')
+    const imgBlobUrl = URL.createObjectURL(imgBlob)
+    const a1 = document.createElement('a')
+    a1.href = imgBlobUrl
+    a1.download = store.currentImage.name
+    a1.click()
+    URL.revokeObjectURL(imgBlobUrl)
+
+    // 下载标注 JSON（如果有）
+    if (data.annotation) {
+      const jsonBlob = b64ToBlob(data.annotation, 'application/json')
+      const jsonBlobUrl = URL.createObjectURL(jsonBlob)
+      const a2 = document.createElement('a')
+      a2.href = jsonBlobUrl
+      a2.download = store.currentImage.name.replace(/\.\w+$/, '.json')
+      a2.click()
+      URL.revokeObjectURL(jsonBlobUrl)
+    }
+
+    ElMessage.success('下载成功')
+  } catch (e: any) {
+    ElMessage.error(e.message || '下载失败')
+    return
+  } finally {
+    loadingDownloadImage.value = false
+  }
 }
 
 function onSwitchResource(type: 'test' | 'template') {

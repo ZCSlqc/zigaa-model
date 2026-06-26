@@ -363,7 +363,7 @@
 
 基于 Konva 的多边形标注编辑器，是前端最复杂的组件。
 
-**工具栏**：返回 / 绘制轮廓 / 编辑/选择 / 保存标注 / 删除标注 / 撤销标注 / 删除图片 / 显示标签-隐藏标签 / 显示轮廓-隐藏轮廓（橙色）/ 良品-缺陷
+**工具栏**：返回 / 绘制轮廓 / 编辑/选择 / 保存标注 / 删除标注 / 撤销标注 / 下载图片 / 删除图片 / 显示标签-隐藏标签 / 显示轮廓-隐藏轮廓（橙色）/ 良品-缺陷
 
 **两种模式**：
 
@@ -411,6 +411,28 @@ mouseDown (draw 模式)
                   ├── 靠近首点 → 闭合 → 标签弹窗
                   └── 远离首点 → 保持绘制状态，下次点击继续加点
 ```
+
+### 标注图片下载
+
+AnnotateView 和 PreviewView 工具栏均有「下载图片」按钮（绿色），点击后同时下载图片和标注 JSON。
+
+```
+用户                    AnnotateView/PreviewView              后端
+ │                            │
+ ├── 点击"下载图片" ──────► │
+ │                            ├── fetch(/{modelId}/{type}/{rel_path}/download) ──► │
+ │                            │    Authorization: Bearer {token}                   │
+ │                            │◄── {"image": "base64", "annotation": "base64|null"} │
+ │                            ├── base64 解码 → image blob
+ │                            ├── base64 解码 → annotation blob（如果有）
+ │                            ├── ObjectURL → <a>.click() 图片
+ │                            ├── ObjectURL → <a>.click() JSON
+ │                            └── 浏览器保存两个文件
+```
+
+- 后端 `/annotations/{model_id}/{resource_type}/{image_path:path}/download`：返回 base64 编码的图片 + 标注（无标注则为 null）
+- 前端用 `fetch` 获取 JSON，`atob` 解码 base64 → `Uint8Array` → `Blob`
+- 分别触发两次 `<a>.click()` 保存图片和 JSON
 
 **数据格式**（`va[]`）：
 

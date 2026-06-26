@@ -581,7 +581,7 @@ async function handleDownloadModel(m: any) {
 }
 
 .project-sidebar {
-  width: 390px;
+  width: 320px;
   flex-shrink: 0;
   background: var(--bg-card);
   border-radius: var(--radius-md);

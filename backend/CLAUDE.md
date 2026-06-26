@@ -61,6 +61,14 @@ uploads 在项目根目录，不在 backend/ 下。路径布局见 [ARCHITECTURE
 - `build_resource_tree` 返回 path（URL 路径），前端从中提取 rel_path（去掉 `/original/` 前缀）
 - `os.path.join` 行为：参数含绝对路径会丢弃前缀，因此所有文件操作使用相对路径
 
+## 标注图片下载
+
+- 路由：`GET /annotations/{model_id}/{resource_type}/{image_path:path}/download`
+- 返回 `{"image": base64, "annotation": base64|null}`（base64 编码的图片 + 标注 JSON）
+- 使用 `Response(content=json.dumps(payload), media_type="application/json")` 避免 FastAPI 默认序列化问题
+- 前端用 `fetch` 获取 JSON，`atob` 解码 base64 → `Blob`，分别触发下载
+- 标注不存在时 `annotation` 字段为 null，只下载图片
+
 ## 文件夹删除
 
 - 路由定义顺序：`/folder/{path}` 在前，`/{image_path:path}` 在后（避免 `path:path` 贪婪匹配吞掉 `folder/` 前缀）
@@ -77,7 +85,7 @@ uploads 在项目根目录，不在 backend/ 下。路径布局见 [ARCHITECTURE
 - `services/chunk_download.py` — 分片下载（threading.Lock + 原子写入）
 - `services/zip_queue.py` — 两阶段异步：assemble 线程（拼接+解压+清理）+ worker 队列（per model+type 串行，传 extract_dir）
 - `api/resources.py` — `_process_extracted_dir`（从解压目录复制+图片处理+DB写入，构建 msgs+errors dict）
-- `api/annotations.py` — 单图标注 GET/PUT/DELETE + 文件夹删除 + PATCH msgs。删除使用 `_find_top_empty_dir` 查找连续空目录，original/compress/preview 三端同步清理，`_cleanup_and_update_ledger` 统一处理台账
+- `api/annotations.py` — 单图标注 GET/PUT/DELETE + 文件夹删除 + PATCH msgs + 图片下载（base64 编码）。删除使用 `_find_top_empty_dir` 查找连续空目录，original/compress/preview 三端同步清理，`_cleanup_and_update_ledger` 统一处理台账
 - `services/helper.py` — OpenCV 图片并行处理（ThreadPoolExecutor + GIL 释放）
 
 ## 板块规范

@@ -40,10 +40,10 @@ frontend/src/
 │   │   ├── DownloadDialog.vue      # 模型分片下载弹窗（ProjectView 使用）
 │   │   └── BatchDownloadDialog.vue # 资源批次/文件夹下载弹窗（多批次顺序下载）
 │   ├── Annotation/
-│   │   ├── Toolbar.vue      # 工具栏（模式/保存/删除/资源切换/标签显隐）
-│   │   ├── PreviewToolbar.vue # 预览模式工具栏（只读）
-│   │   ├── ImagePanel.vue   # 左侧面板（目录树 + 图片计数 + 分类筛选 + 折叠展开）
-│   │   └── TreeItem.vue     # 递归树节点（文件夹/图片 + 缩略图 + 状态点）
+│   │   ├── Toolbar.vue            # 工具栏（模式/保存/删除/下载图片/资源切换/标签显隐）
+│   │   ├── PreviewToolbar.vue     # 预览模式工具栏（只读，含下载图片按钮）
+│   │   ├── ImagePanel.vue         # 左侧面板（目录树 + 图片计数 + 分类筛选 + 折叠展开）
+│   │   └── TreeItem.vue           # 递归树节点（文件夹/图片 + 缩略图 + 状态点）
 │   └── Editor/
 │       └── JsonEditor.vue   # JSON 编辑器（CodeMirror 6）
 ├── views/
@@ -53,7 +53,7 @@ frontend/src/
 │   ├── ProjectView.vue      # 项目列表 + 模型卡片（轮询 training 状态）
 │   ├── ModelDetailView.vue  # 模型详情（资源上传/下载/状态/参数编辑）
 │   ├── AnnotateView.vue     # 标注编辑器（Konva 画布核心）
-│   ├── PreviewView.vue      # 图片预览（只读，test/template）
+│   ├── PreviewView.vue      # 图片预览（只读，test/template，支持下载图片）
 │   ├── GuideView.vue        # 使用教程
 │   └── AdminPanel.vue       # 管理后台（用户/项目 CRUD）
 └── styles/
@@ -163,6 +163,8 @@ modelId/resourceType/annotationData/initialSnapshot/savedSnapshot/sourceTree/dis
 - `setMode(m)`: 仅在 select 模式启动 10s 自动保存定时器
 - `categoryFilter`: 控制 displayTree 过滤，TreeFile.category 始终有值
 - `onFolderRemoved(cb)`: 订阅文件夹删除事件，通知 UI 移除展开状态
+- `switchResourceType(type)`: 切换资源类型（good/defect/test/template）
+- `getPreviewPathByImage(img)`: 获取图片预览路径（preview layer）
 
 ## 构建配置
 
