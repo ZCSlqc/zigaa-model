@@ -54,36 +54,72 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const categoryFilter = ref<string | undefined>(undefined)
 
   // ── Thumbnail cache (max 200 items, ±100 neighbors) ──
-  const MAX_THUMB_CACHE = 200
   const thumbCache = ref<Map<string, string>>(new Map()) // path → compress_url
+  const thumbCacheRange = ref<[number, number] | null>(null) // cached [start, end] indices
+  const flatFiles = ref<TreeFile[]>([]) // 扁平化文件列表，缓存一次
 
-  // 点击新图片时：清除旧缓存，加载当前 ±100
-  function refreshThumbCache(selectedPath: string) {
-    // 找到当前图片在扁平列表中的索引
-    const flat: TreeFile[] = []
+  // 首次加载时扁平化 sourceTree
+  function ensureFlatFiles() {
+    if (flatFiles.value.length > 0) return
     const walk = (nodes: TreeNode[]) => {
       for (const node of nodes) {
         if ('children' in node) walk((node as TreeFolder).children)
-        else flat.push(node as TreeFile)
+        else flatFiles.value.push(node as TreeFile)
       }
     }
     walk(sourceTree.value)
+  }
 
-    const idx = flat.findIndex(f => f.path === selectedPath)
-    if (idx === -1) { thumbCache.value.clear(); return }
+  // 点击新图片时：增量更新缓存，保留重叠部分
+  function refreshThumbCache(selectedPath: string) {
+    ensureFlatFiles()
 
-    // 清除旧缓存
-    thumbCache.value.clear()
-
-    // 计算窗口：[max(0, idx-100), min(len, idx+101))
-    const start = Math.max(0, idx - 100)
-    const end = Math.min(flat.length, idx + 101)
-    const slice = flat.slice(start, end)
-
-    for (const f of slice) {
-      const url = getCompressPathByImage(f)
-      thumbCache.value.set(f.path, url)
+    const idx = flatFiles.value.findIndex(f => f.path === selectedPath)
+    if (idx === -1) {
+      thumbCache.value.clear()
+      thumbCacheRange.value = null
+      return
     }
+
+    const start = Math.max(0, idx - 100)
+    const end = Math.min(flatFiles.value.length, idx + 101)
+
+    if (!thumbCacheRange.value) {
+      // 首次加载，清空旧缓存
+      thumbCache.value.clear()
+    } else {
+      const [oldStart, oldEnd] = thumbCacheRange.value
+
+      // 旧范围和新范围无交集 → 直接清空重建
+      if (oldEnd <= start || oldStart >= end) {
+        thumbCache.value.clear()
+      } else {
+        // 有交集 → 增量更新：移除超出新范围的，新增不足的部分
+        const newSet = new Map<string, string>()
+
+        // 1. 保留交集部分（重叠的，保持不变）
+        for (const [path, url] of thumbCache.value) {
+          // 找出这张 path 对应的索引
+          const i = flatFiles.value.findIndex(f => f.path === path)
+          if (i >= start && i < end) {
+            newSet.set(path, url) // 在新范围内，保留
+          }
+        }
+
+        thumbCache.value = newSet
+      }
+    }
+
+    // 2. 加载新窗口中还没缓存的
+    for (let i = start; i < end; i++) {
+      const f = flatFiles.value[i]
+      if (!thumbCache.value.has(f.path)) {
+        const url = getCompressPathByImage(f)
+        thumbCache.value.set(f.path, url)
+      }
+    }
+
+    thumbCacheRange.value = [start, end]
   }
 
   function thumbsIncludePath(path: string): boolean {
