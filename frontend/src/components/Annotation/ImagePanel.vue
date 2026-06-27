@@ -181,8 +181,7 @@ function expandAll() {
     for (const n of nodes) {
       if ('children' in n) {
         ef.add((n as TreeFolder).path)
-        // 3w 张全展开太卡，不递归展开子文件夹
-        break
+        walk((n as TreeFolder).children)
       }
     }
   }
