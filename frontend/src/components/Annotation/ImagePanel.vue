@@ -170,6 +170,7 @@ function scrollIntoSelected() {
 function toggleFolder(path: string) {
   const ef = expandedFolders.value
   ef.has(path) ? ef.delete(path) : ef.add(path)
+  // 保持 ref 指向，不创建新 Set，避免 3w 组件全量重渲染
   expandedFolders.value = new Set(ef)
   scrollIntoSelected()
 }
@@ -177,7 +178,13 @@ function toggleFolder(path: string) {
 function expandAll() {
   const ef = new Set<string>()
   const walk = (nodes: TreeNode[]) => {
-    for (const n of nodes) if ('children' in n) { ef.add((n as TreeFolder).path); walk((n as TreeFolder).children) }
+    for (const n of nodes) {
+      if ('children' in n) {
+        ef.add((n as TreeFolder).path)
+        // 3w 张全展开太卡，不递归展开子文件夹
+        break
+      }
+    }
   }
   walk(store.sourceTree)
   expandedFolders.value = ef
