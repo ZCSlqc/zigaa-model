@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { getResourceTree, getAnnotation, saveAnnotation, deleteImage, deleteFolder, updateImageMsg } from '../api/resource'
 import { getModel } from '../api/model'
 import { extractRelPath } from '../utils/path'
