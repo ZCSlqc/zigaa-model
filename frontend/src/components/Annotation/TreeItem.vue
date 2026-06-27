@@ -35,17 +35,14 @@
       </el-tooltip>
     </div>
 
-    <div v-if="isFile && fileNode" class="tree-thumb" ref="thumbRef" @click.stop="$emit('selectImage', fileNode)">
+    <div v-if="isFile && fileNode" class="tree-thumb">
       <img
-        v-if="thumbLoaded"
-        :src="thumbUrl"
+        :src="store.getCompressPathByImage(fileNode)"
         :alt="fileNode.name"
         class="thumb-img"
+        @click.stop="$emit('selectImage', fileNode)"
         loading="lazy"
       />
-      <div v-else class="thumb-placeholder">
-        <el-icon :size="20"><Picture /></el-icon>
-      </div>
     </div>
 
     <div v-if="isFolder && expanded" class="tree-children">
@@ -66,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { ArrowRight, ArrowDown, Folder, Picture, Delete, Download } from '@element-plus/icons-vue'
 import type { TreeNode, TreeFolder, TreeFile } from '../../stores/annotation'
 import { useAnnotationStore } from '../../stores/annotation'
@@ -96,51 +93,6 @@ const expanded = computed(() => {
   return false
 })
 const errorLevel = computed(() => fileNode.value?.error_level ?? 0)
-
-// Thumbnail lazy loading
-const thumbRef = ref<HTMLElement | null>(null)
-const thumbLoaded = ref(false)
-const thumbUrl = ref('')
-
-function loadThumbnail() {
-  if (thumbLoaded.value) return
-  const img = new window.Image()
-  img.crossOrigin = 'anonymous'
-  img.onload = () => {
-    thumbUrl.value = img.src
-    thumbLoaded.value = true
-  }
-  img.onerror = () => {
-    thumbLoaded.value = true // still show placeholder
-  }
-  img.src = store.getCompressPathByImage(fileNode.value!)
-}
-
-let observer: IntersectionObserver | null = null
-function startThumbObserver() {
-  if (!thumbRef.value) return
-  if (!observer) {
-    observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            loadThumbnail()
-            observer?.disconnect()
-          }
-        })
-      },
-      { rootMargin: '200px' }, // 提前 200px 开始加载
-    )
-  }
-  observer.observe(thumbRef.value)
-}
-
-function cleanupThumbObserver() {
-  if (observer) {
-    observer.disconnect()
-    observer = null
-  }
-}
 
 /** "Bubble-up" highlight from the timestamp folder outward.
  *
@@ -233,14 +185,6 @@ const tooltipContent = computed(() => {
 function toggleFolder() {
   emit('toggleFolder', (props.node as TreeFolder).path)
 }
-
-// Lifecycle
-onMounted(() => {
-  if (isFile.value) startThumbObserver()
-})
-onUnmounted(() => {
-  cleanupThumbObserver()
-})
 </script>
 
 <style scoped lang="scss">
@@ -371,24 +315,6 @@ onUnmounted(() => {
   border: 1px solid var(--border-light);
   cursor: pointer;
   object-fit: cover;
-  transition: opacity 0.15s;
-
-  &:hover {
-    opacity: 0.8;
-  }
-}
-
-.thumb-placeholder {
-  width: 120px;
-  height: 60px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-light);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  cursor: pointer;
   transition: opacity 0.15s;
 
   &:hover {
