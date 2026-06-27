@@ -93,7 +93,7 @@ const expanded = computed(() => {
 })
 const errorLevel = computed(() => fileNode.value?.error_level ?? 0)
 
-// Thumbnails: only show when selected image is within ±100 range
+// Thumbnails: only show when path is in cache
 const thumbVisible = computed(() => {
   if (!isFile.value || !fileNode.value) return false
   return store.thumbsIncludePath(fileNode.value.path)
