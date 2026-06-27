@@ -9,7 +9,11 @@
     </div>
     <div class="panel-actions">
       <div class="panel-actions-left">
-        <span class="action-link" @click="expandAll">全部展开</span>
+        <span
+          class="action-link action-expand"
+          :class="{ disabled: store.allImages.length > 5000 }"
+          @click="expandAll"
+        >全部展开</span>
         <span class="action-sep">/</span>
         <span class="action-link" @click="collapseAll">全部折叠</span>
       </div>
@@ -176,6 +180,12 @@ function toggleFolder(path: string) {
 }
 
 function expandAll() {
+  // 大于 5000 张不展开，灰色不可点
+  const count = store.allImages.length
+  if (count > 5000) {
+    ElMessage.warning(`图片数量 ${count} 超过 5000，暂不支持全部展开`)
+    return
+  }
   const ef = new Set<string>()
   const walk = (nodes: TreeNode[]) => {
     for (const n of nodes) {
@@ -300,6 +310,15 @@ onUnmounted(() => { offFolderRemoved() })
   cursor: pointer;
   color: var(--color-primary);
   &:hover { opacity: 0.75 }
+
+  &.disabled {
+    cursor: not-allowed;
+    color: var(--text-placeholder);
+
+    &:hover {
+      opacity: 1;
+    }
+  }
 }
 
 .action-sep { color: var(--border-color); user-select: none }
