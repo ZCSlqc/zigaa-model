@@ -35,13 +35,12 @@
       </el-tooltip>
     </div>
 
-    <div v-if="isFile && fileNode" class="tree-thumb">
+    <div v-if="isFile && fileNode && thumbVisible" class="tree-thumb">
       <img
         :src="store.getCompressPathByImage(fileNode)"
         :alt="fileNode.name"
-        class="thumb-img"
+        :class="['thumb-img', { active: props.selectedPath === fileNode.path }]"
         @click.stop="$emit('selectImage', fileNode)"
-        loading="lazy"
       />
     </div>
 
@@ -63,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ArrowRight, ArrowDown, Folder, Picture, Delete, Download } from '@element-plus/icons-vue'
 import type { TreeNode, TreeFolder, TreeFile } from '../../stores/annotation'
 import { useAnnotationStore } from '../../stores/annotation'
@@ -93,6 +92,12 @@ const expanded = computed(() => {
   return false
 })
 const errorLevel = computed(() => fileNode.value?.error_level ?? 0)
+
+// Thumbnails: only show when selected image is within ±100 range
+const thumbVisible = computed(() => {
+  if (!isFile.value || !fileNode.value) return false
+  return store.thumbsIncludePath(fileNode.value.path)
+})
 
 /** "Bubble-up" highlight from the timestamp folder outward.
  *
@@ -303,10 +308,7 @@ function toggleFolder() {
   }
 }
 
-.tree-thumb {
-  padding: 2px var(--spacing-xs) 4px;
-  width: fit-content;
-}
+/* intentionally left empty — styles moved above for flex layout */
 
 .thumb-img {
   width: 120px;
@@ -320,6 +322,19 @@ function toggleFolder() {
   &:hover {
     opacity: 0.8;
   }
+
+  &.active {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary-light);
+  }
+}
+
+.tree-thumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px var(--spacing-xs) 8px;
+  width: fit-content;
 }
 
 .icon {

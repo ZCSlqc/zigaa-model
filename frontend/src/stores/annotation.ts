@@ -31,6 +31,7 @@ export interface TreeFile {
   error?: string
   error_level?: number // 1-5 red (critical), 6-9 yellow (warning), 0 = OK
   category: 'none' | 'undone' | 'pending' // 用户分类标记，始终有值
+  _thumbLoaded?: boolean // 缩略图是否已缓存
 }
 
 export interface TreeFolder {
@@ -52,6 +53,49 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const loading = ref(false)
   const annotationLoading = ref(false)
   const categoryFilter = ref<string | undefined>(undefined)
+
+  // ── Thumbnail cache ──
+  const THUMB_RANGE = 100 // ±100 neighbors
+  const thumbCache = ref<Map<string, string>>(new Map()) // path → url
+  let thumbAllFiles: TreeFile[] = [] // cache of flat file list for neighbor lookup
+
+  function ensureThumbAllFiles() {
+    if (thumbAllFiles.length > 0) return
+    thumbAllFiles = []
+    const walk = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        if ('children' in node) walk((node as TreeFolder).children)
+        else thumbAllFiles.push(node as TreeFile)
+      }
+    }
+    walk(sourceTree.value)
+  }
+
+  function loadThumbsForImage(selectedPath: string) {
+    ensureThumbAllFiles()
+    const idx = thumbAllFiles.findIndex(f => f.path === selectedPath)
+    if (idx === -1) return
+
+    const start = Math.max(0, idx - THUMB_RANGE)
+    const end = Math.min(thumbAllFiles.length, idx + THUMB_RANGE + 1)
+    const slice = thumbAllFiles.slice(start, end)
+
+    for (const f of slice) {
+      if (f._thumbLoaded || thumbCache.value.has(f.path)) continue
+      const url = getCompressPathByImage(f)
+      thumbCache.value.set(f.path, url)
+      f._thumbLoaded = true
+    }
+  }
+
+  function thumbsIncludePath(path: string): boolean {
+    return thumbCache.value.has(path)
+  }
+
+  function getThumbsInRange(_target: TreeFile): TreeFile[] {
+    if (thumbAllFiles.length === 0) ensureThumbAllFiles()
+    return thumbAllFiles.filter(f => thumbCache.value.has(f.path)) as TreeFile[]
+  }
 
   // ── 标注历史 label（跨图片切换持久化，最近 10 个） ──
   const labelHistory = ref<string[]>([])
@@ -258,6 +302,8 @@ export const useAnnotationStore = defineStore('annotation', () => {
       annotationData.value = null
       // 3. Switch image — component's watch handles image + annotation loading
       currentImage.value = img
+      // 4. Load thumbnails for ±100 neighbors
+      loadThumbsForImage(img.path)
     } finally {
       _pendingSwitch = false
     }
@@ -477,5 +523,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
     setMode,
     labelHistory, addLabelToHistory, removeLabelFromHistory,
     deleteFolder: deleteFolderFn,
+    // Thumbnail cache
+    thumbsIncludePath, getThumbsInRange,
   }
 })
