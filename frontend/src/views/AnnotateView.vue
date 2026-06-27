@@ -34,7 +34,7 @@
         <div class="canvas-container" ref="containerRef" @contextmenu.prevent>
           <div v-if="store.currentImage" class="canvas-title">
             <span class="canvas-title-info">
-              图片路径：{{ store.currentImage.rel_path }}&ensp;|&ensp;通道数：{{ store.currentImage.channels || 3 }}&ensp;|&ensp;分辨率：{{ imgW }}×{{ imgH }}
+              图片路径：{{ store.currentImage.rel_path }}&ensp;|&ensp;通道数：{{ store.currentImage.channels || 3 }}&ensp;|&ensp;分辨率：{{ imgW }}×{{ imgH }}&ensp;|&ensp;<span class="scale-badge">缩放：{{ displayScale }}</span>
             </span>
             <span class="canvas-title-category">
               <el-button
@@ -290,6 +290,9 @@ const stageHeight = ref(600)
 const scale = ref(1)
 const panX = ref(0)
 const panY = ref(0)
+
+// Display scale percentage
+const displayScale = computed(() => `${Math.round(scale.value * 100)}%`)
 
 // Persisted view state across image switches
 let globalScale = 1
@@ -1311,6 +1314,12 @@ onUnmounted(() => {
   white-space: nowrap;
   flex-shrink: 1;
   min-width: 0;
+}
+
+.scale-badge {
+  color: var(--color-primary);
+  font-weight: 600;
+  margin-left: 4px;
 }
 
 .canvas-title-category {
