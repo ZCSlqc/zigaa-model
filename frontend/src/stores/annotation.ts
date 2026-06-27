@@ -53,12 +53,13 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const annotationLoading = ref(false)
   const categoryFilter = ref<string | undefined>(undefined)
 
-  // ── Thumbnail cache (max 200 items, ±100 neighbors) ──
-  const thumbCache = ref<Map<string, string>>(new Map()) // path → compress_url
-  const thumbCacheRange = ref<[number, number] | null>(null) // cached [start, end] indices
-  const flatFiles = ref<TreeFile[]>([]) // 扁平化文件列表，缓存一次
+  // ── Thumbnail cache (path → url, ~200 items) ──
+  // No interval tracking. On each click: check if selected path is in cache →
+  //   true: skip (no update needed)
+  //   false: clear() all, load ±100 neighbors into cache
+  const thumbCache = ref<Map<string, string>>(new Map())
+  const flatFiles = ref<TreeFile[]>([]) // flat file list, cached once
 
-  // 首次加载时扁平化 sourceTree
   function ensureFlatFiles() {
     if (flatFiles.value.length > 0) return
     const walk = (nodes: TreeNode[]) => {
@@ -70,56 +71,25 @@ export const useAnnotationStore = defineStore('annotation', () => {
     walk(sourceTree.value)
   }
 
-  // 点击新图片时：增量更新缓存，保留重叠部分
   function refreshThumbCache(selectedPath: string) {
     ensureFlatFiles()
 
+    // If selected path is already in cache → skip
+    if (thumbCache.value.has(selectedPath)) return
+
+    // Not in cache → clear all, load ±100 neighbors
     const idx = flatFiles.value.findIndex(f => f.path === selectedPath)
-    if (idx === -1) {
-      thumbCache.value.clear()
-      thumbCacheRange.value = null
-      return
-    }
+    if (idx === -1) return
+
+    thumbCache.value.clear()
 
     const start = Math.max(0, idx - 100)
     const end = Math.min(flatFiles.value.length, idx + 101)
-
-    if (!thumbCacheRange.value) {
-      // 首次加载，清空旧缓存
-      thumbCache.value.clear()
-    } else {
-      const [oldStart, oldEnd] = thumbCacheRange.value
-
-      // 旧范围和新范围无交集 → 直接清空重建
-      if (oldEnd <= start || oldStart >= end) {
-        thumbCache.value.clear()
-      } else {
-        // 有交集 → 增量更新：移除超出新范围的，新增不足的部分
-        const newSet = new Map<string, string>()
-
-        // 1. 保留交集部分（重叠的，保持不变）
-        for (const [path, url] of thumbCache.value) {
-          // 找出这张 path 对应的索引
-          const i = flatFiles.value.findIndex(f => f.path === path)
-          if (i >= start && i < end) {
-            newSet.set(path, url) // 在新范围内，保留
-          }
-        }
-
-        thumbCache.value = newSet
-      }
-    }
-
-    // 2. 加载新窗口中还没缓存的
     for (let i = start; i < end; i++) {
       const f = flatFiles.value[i]
-      if (!thumbCache.value.has(f.path)) {
-        const url = getCompressPathByImage(f)
-        thumbCache.value.set(f.path, url)
-      }
+      const url = getCompressPathByImage(f)
+      thumbCache.value.set(f.path, url)
     }
-
-    thumbCacheRange.value = [start, end]
   }
 
   function thumbsIncludePath(path: string): boolean {
@@ -304,6 +274,8 @@ export const useAnnotationStore = defineStore('annotation', () => {
     if (type !== resourceType.value && modelId.value) {
       currentImage.value = null
       annotationData.value = null
+      thumbCache.value.clear()
+      flatFiles.value = []
       loadModel(modelId.value, type)
     }
   }
@@ -490,6 +462,9 @@ export const useAnnotationStore = defineStore('annotation', () => {
     try {
       await deleteImage(modelId.value, resourceType.value, img.rel_path)
       ElMessage.success('图片已删除')
+      // Remove from flatFiles and thumbCache
+      flatFiles.value = flatFiles.value.filter(f => f.path !== img.path)
+      thumbCache.value.delete(img.path)
       emitRemovedFolders(removeFileFromTrees(img))
       currentImage.value = null
       annotationData.value = null
@@ -503,8 +478,34 @@ export const useAnnotationStore = defineStore('annotation', () => {
     try {
       await deleteFolder(modelId.value, resourceType.value, relPath)
       ElMessage.success('文件夹已删除')
+      // Remove from flatFiles and thumbCache
+      const pathsToDelete = new Set<string>()
+      const walk = (nodes: TreeNode[]) => {
+        for (const node of nodes) {
+          if ('children' in node) walk((node as TreeFolder).children)
+          else if ((node as TreeFile).path.startsWith(folderPath + '/')) pathsToDelete.add((node as TreeFile).path)
+        }
+      }
+      // Only need to search sourceTree under this folder
+      const findFolderAndCollect = (nodes: TreeNode[]) => {
+        for (const node of nodes) {
+          if ('children' in node) {
+            const folder = node as TreeFolder
+            if (folder.path === folderPath) {
+              walk(folder.children)
+              return
+            }
+            findFolderAndCollect(folder.children)
+          }
+        }
+      }
+      findFolderAndCollect(sourceTree.value)
+      for (const p of pathsToDelete) {
+        flatFiles.value = flatFiles.value.filter(f => f.path !== p)
+        thumbCache.value.delete(p)
+      }
       removeFolderFromTrees(folderPath)
-      if (currentImage.value && currentImage.value.path.startsWith(folderPath)) {
+      if (currentImage.value && currentImage.value.path.startsWith(folderPath + '/')) {
         currentImage.value = null
         annotationData.value = null
       }
