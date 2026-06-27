@@ -232,19 +232,7 @@ async function startDownloadFolder(folderPath: string) {
   batchDownloadRef.value?.openDialog()
 }
 
-// Auto-expand on first load
-let treeInitialized = false
-watch(() => store.sourceTree, (newTree) => {
-  if (newTree.length > 0 && !treeInitialized) {
-    treeInitialized = true
-    const ef = new Set<string>()
-    const expandAllFolders = (nodes: TreeNode[]) => {
-      for (const n of nodes) if ('children' in n) { ef.add((n as TreeFolder).path); expandAllFolders((n as TreeFolder).children) }
-    }
-    expandAllFolders(newTree)
-    expandedFolders.value = ef
-  }
-}, { immediate: true })
+// No auto-expand — tree starts fully collapsed
 
 // Remove deleted folders from expandedFolders
 const folderCb = (paths: string[]) => {
