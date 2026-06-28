@@ -128,6 +128,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
 
   // displayTree 变化时自动 build flatFiles + 清空缓存
   watch(displayTree, (newTree) => {
+    if (!newTree || newTree.length === 0) return
     buildFlatFilesFromTree(newTree)
     thumbCache.value.clear()
   }, { immediate: true })
