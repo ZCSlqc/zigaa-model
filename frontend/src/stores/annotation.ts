@@ -509,6 +509,10 @@ export const useAnnotationStore = defineStore('annotation', () => {
     return img.compress_path || `/uploads/${modelId.value}/${resourceType.value}/compress/${img.rel_path}`
   }
 
+  function getOriginalPathByImage(img: TreeFile): string {
+    return `/uploads/${modelId.value}/${resourceType.value}/original/${img.rel_path}`
+  }
+
   function getPreviewPathByImage(img: TreeFile): string {
     return img.preview_path || `/uploads/${modelId.value}/${resourceType.value}/preview/${img.rel_path}`
   }

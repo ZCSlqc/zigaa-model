@@ -480,7 +480,7 @@ async function loadImage() {
   imageReady.value = false
   hoveredPointIdx.value = null
 
-  const origPath = store.getPreviewPathByImage(store.currentImage)
+  const origPath = store.getOriginalPathByImage(store.currentImage)
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new window.Image()
     img.crossOrigin = 'anonymous'
