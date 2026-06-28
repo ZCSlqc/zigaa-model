@@ -527,7 +527,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
     loading, annotationLoading, allImages,
     loadModel, switchResourceType, selectImage, loadAnnotation, save,
     deleteCurrentImage, deleteFolder: deleteFolderFn,
-    getCompressPathByImage, getPreviewPathByImage, channelLabel,
+    getCompressPathByImage, getPreviewPathByImage, getOriginalPathByImage, channelLabel,
     getFilteredImages, prevImage, nextImage,
     getEmptyFolders,
     onFolderRemoved, categoryFilter,
