@@ -510,7 +510,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
   }
 
   function getPreviewPathByImage(img: TreeFile): string {
-    return img.original_path || img.preview_path || `/uploads/${modelId.value}/${resourceType.value}/original/${img.rel_path}`
+    return img.preview_path || `/uploads/${modelId.value}/${resourceType.value}/preview/${img.rel_path}`
   }
 
   function channelLabel(channels: number | undefined): string {
