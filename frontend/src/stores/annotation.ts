@@ -47,6 +47,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
   const annotationData = ref<AnnotationData | null>(null)
   const initialSnapshot = ref<AnnotationData | null>(null)   // 初始快照（给撤销用）
   const savedSnapshot = ref<AnnotationData | null>(null)     // 最后保存态（给跳过优化用）
+  const hasChanges = ref(false)                                 // 标注数据是否被修改过
   const sourceTree = ref<TreeNode[]>([])                     // 唯一真实数据源
   const currentImage = ref<TreeFile | null>(null)
   const loading = ref(false)
@@ -142,12 +143,12 @@ export const useAnnotationStore = defineStore('annotation', () => {
     if (_globalTimer) { clearTimeout(_globalTimer); _globalTimer = null }
   }
 
-  // Schedule a 10s auto-save timer — only fires in edit mode
+  // Schedule a 10s auto-save timer — fires in select (edit) mode
   function scheduleAutoSave(delayMs: number) {
     clearAutoSaveTimers()
     _globalTimer = setTimeout(async () => {
       _globalTimer = null
-      if (_mode.value !== 'select') return  // 仅编辑模式启动
+      if (_mode.value !== 'select') return  // 仅编辑模式触发
       if (!annotationData.value || !currentImage.value) return
       await save(true, true)
     }, delayMs)
@@ -156,7 +157,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
   function setMode(m: 'draw' | 'select') {
     _mode.value = m
     if (m === 'select') {
-      scheduleAutoSave(10000)  // 编辑模式启动 10s 定时
+      scheduleAutoSave(10000)  // 进入编辑模式，10s 后自动保存
     } else {
       clearAutoSaveTimers()  // 非编辑模式清掉
     }
@@ -295,8 +296,10 @@ export const useAnnotationStore = defineStore('annotation', () => {
     // Guard: if a switch is already in progress, wait for it to finish
     // so we don't race between loadImage/loadAnnotation of different images
     if (_pendingSwitch) {
-      // Wait a tick and retry (the watch will have resolved)
-      await new Promise(r => setTimeout(r, 50))
+      const MAX_RETRIES = 40 // 50ms * 40 = 2s max wait
+      for (let i = 0; i < MAX_RETRIES && _pendingSwitch; i++) {
+        await new Promise(r => setTimeout(r, 50))
+      }
       if (_pendingSwitch) return selectImage(img)
     }
     _pendingSwitch = true
@@ -305,6 +308,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
       if (currentImage.value && annotationData.value) {
         try { await save(true, true) } catch { /* silent */ }
       }
+      // Note: _pendingSwitch is now a bounded loop (max 40 retries = 2s)
       // 2. Clear annotation data
       annotationData.value = null
       // 3. Switch image — component's watch handles image + annotation loading
@@ -324,6 +328,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
       const data = JSON.parse(JSON.stringify(res.data))
       initialSnapshot.value = data
       savedSnapshot.value = data   // 三态初始化
+      hasChanges.value = false
     } catch (e: any) {
       ElMessage.error(e.response?.data?.detail || '加载标注失败')
     } finally {
@@ -350,6 +355,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
       updateTreeNodeError(currentImage.value, undefined, 0)
       // Update savedSnapshot after every successful save
       savedSnapshot.value = JSON.parse(JSON.stringify(annotationData.value))
+      hasChanges.value = false
       clearAutoSaveTimers()
     } catch (e: any) {
       if (!isSilent) throw new Error(e.response?.data?.detail || e.message || '保存失败')
@@ -524,7 +530,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
   }
 
   return {
-    modelId, resourceType, annotationData, initialSnapshot, savedSnapshot, sourceTree, displayTree, currentImage,
+    modelId, resourceType, annotationData, initialSnapshot, savedSnapshot, hasChanges, sourceTree, displayTree, currentImage,
     loading, annotationLoading, allImages,
     loadModel, switchResourceType, selectImage, loadAnnotation, save,
     deleteCurrentImage, deleteFolder: deleteFolderFn,

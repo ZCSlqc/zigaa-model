@@ -187,15 +187,14 @@ function expandAll() {
     return
   }
   const ef = new Set<string>()
-  const walk = (nodes: TreeNode[]) => {
-    for (const n of nodes) {
-      if ('children' in n) {
-        ef.add((n as TreeFolder).path)
-        walk((n as TreeFolder).children)
-      }
+  const stack = [...store.sourceTree]
+  while (stack.length > 0) {
+    const node = stack.pop()!
+    if ('children' in node) {
+      ef.add((node as TreeFolder).path)
+      stack.push(...(node as TreeFolder).children)
     }
   }
-  walk(store.sourceTree)
   expandedFolders.value = ef
   scrollIntoSelected()
 }

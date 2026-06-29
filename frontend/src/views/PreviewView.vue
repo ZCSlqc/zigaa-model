@@ -208,6 +208,7 @@ function labelWidthPx(entry: { labelname: string; label: number; pts?: Array<{ x
 }
 
 function onMouseDown(e: any) {
+  if (e.evt.button !== 2) return // only right-click triggers panning
   isPanning.value = true
   const rect = containerRef.value!.getBoundingClientRect()
   lastPos.value = { x: e.evt.clientX - rect.left, y: e.evt.clientY - rect.top }
@@ -270,11 +271,14 @@ function centerImage() {
 function loadImage() {
   if (!store.currentImage) return
   imageReady.value = false
+  _loadGen++
+  const gen = _loadGen
 
   const imgPath = store.getPreviewPathByImage(store.currentImage)
   const img = new window.Image()
   img.crossOrigin = 'anonymous'
   img.onload = () => {
+    if (gen !== _loadGen) return // discard stale load
     imgW.value = img.naturalWidth
     imgH.value = img.naturalHeight
     bgImage.value = img
@@ -283,6 +287,7 @@ function loadImage() {
     centerImage()
   }
   img.onerror = () => {
+    if (gen !== _loadGen) return
     ElMessage.error('图片加载失败')
     imageReady.value = false
   }
@@ -353,13 +358,14 @@ function applyCursor() {
 
 watch(cursor, () => applyCursor())
 
-watch(() => store.currentImage, () => {
-  if (!store.currentImage) {
+watch(() => store.currentImage, async (newImg) => {
+  if (!newImg) {
     imageReady.value = false
     bgImage.value = null
   } else {
     imageReady.value = false
     loadImage()
+    await store.loadAnnotation(newImg)
   }
 })
 

@@ -5,7 +5,7 @@
         @back="router.push(`/model/${modelId}`)"
         :mode="mode"
         :has-polygons="currentEntries.length > 0"
-        :has-changes="!!store.annotationData && JSON.stringify(store.annotationData) !== JSON.stringify(store.savedSnapshot)"
+        :has-changes="store.hasChanges"
         :resource-type="store.resourceType as 'good' | 'defect'"
         :show-labels="showLabels"
         :show-edges="showEdges"
@@ -25,6 +25,10 @@
         @delete-image="deleteImage"
         @download-image="downloadImage"
       />
+
+      <div v-if="lastSaveError" class="save-error-banner" @click="lastSaveError = ''">
+        自动保存失败: {{ lastSaveError }}. 请及时手动保存（Ctrl+S）
+      </div>
 
       <div class="annotate-body">
         <ImagePanel
@@ -56,7 +60,7 @@
             @mouseup="handleStageMouseUp"
             @contextmenu.prevent
           >
-            <v-layer>
+            <v-layer :config="{ imageSmoothingEnabled: false }">
               <v-image
                 :config="{ image: bgImage, x: 0, y: 0, width: imgW, height: imgH }"
               />
@@ -141,7 +145,7 @@
                   />
                   <v-text
                     :config="{
-                      text: entry.labelname || `${entry.label}`,
+                      text: getLabelWithArea(entry),
                       fontSize: 12 / scale,
                       fontFamily: 'sans-serif',
                       fill: '#fff',
@@ -242,6 +246,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppLayout from '../components/Layout/AppLayout.vue'
@@ -268,14 +273,19 @@ const currentCategory = computed(() => store.currentImage?.category ?? 'none')
 async function setCategory(category: string) {
   if (!store.currentImage) return
   const oldPath = store.currentImage.rel_path
-  const images = store.getFilteredImages(store.categoryFilter)
-  const idx = images.findIndex(i => i.path === store.currentImage!.path)
   await store.updateImageMsg(oldPath, category)
   if (store.categoryFilter) {
     const remaining = store.getFilteredImages(store.categoryFilter)
-    if (remaining.length > 0) {
-      store.selectImage(remaining[idx % remaining.length])
-    } else {
+    const newPath = store.currentImage?.path
+    if (newPath && remaining.length > 0) {
+      const newIdx = remaining.findIndex(i => i.path === newPath)
+      if (newIdx >= 0) {
+        store.selectImage(remaining[newIdx])
+      } else {
+        store.currentImage = null
+        store.annotationData = null
+      }
+    } else if (!remaining.length) {
       store.currentImage = null
       store.annotationData = null
     }
@@ -299,6 +309,7 @@ let globalScale = 1
 let globalPanX = 0
 let globalPanY = 0
 let firstLoad = true
+const lastSaveError = ref('')
 
 // Image
 const bgImage = ref<HTMLImageElement | null>(null)
@@ -480,17 +491,18 @@ async function loadImage() {
   imageReady.value = false
   hoveredPointIdx.value = null
 
-  const origPath = store.getPreviewPathByImage(store.currentImage)
+  const path = store.getPreviewPathByImage(store.currentImage)
+  const img = new window.Image()
+  img.crossOrigin = 'anonymous'
+  const loadGen = _loadGen
   return new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new window.Image()
-    img.crossOrigin = 'anonymous'
     img.onload = () => {
+      if (loadGen !== _loadGen) return // discard stale load
       imgW.value = img.naturalWidth
       imgH.value = img.naturalHeight
       bgImage.value = img
       imageReady.value = true
 
-      // First image: fit to canvas; subsequent images: keep global scale + pan
       if (firstLoad) {
         firstLoad = false
         const initScale = Math.min(1, (stageWidth.value - 40) / img.naturalWidth, (stageHeight.value - 40) / img.naturalHeight)
@@ -511,7 +523,7 @@ async function loadImage() {
       imageReady.value = false
       reject(new Error('图片加载失败'))
     }
-    img.src = origPath
+    img.src = path
   })
 }
 
@@ -558,6 +570,23 @@ function toPathData(pts: Array<{ x: number; y: number }>): string {
   }
   d += ' Z'
   return d
+}
+
+function polygonArea(pts: Array<{ x: number; y: number }>): number {
+  let area = 0
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length
+    area += pts[i].x * pts[j].y
+    area -= pts[j].x * pts[i].y
+  }
+  return Math.abs(area / 2)
+}
+
+function getLabelWithArea(entry: { labelname: string; label: number; pts: Array<{ x: number; y: number }> }): string {
+  const label = entry.labelname || `${entry.label}`
+  if (!entry.pts || entry.pts.length < 3) return label
+  const area = polygonArea(entry.pts)
+  return `${label} | ${area.toFixed(1)}`
 }
 
 function isValidPoint(pt: any): boolean {
@@ -887,7 +916,9 @@ async function finishPolygon(labelname?: string) {
         labelname: finalName,
         pts: [...drawingPoints.value],
       })
-      try { await store.save(true, false) } catch { /* silent */ }
+      try { await store.save(true, false) } catch (e: any) {
+        lastSaveError.value = e.message || '自动保存失败'
+      }
     })
     return // callback handles the rest
   }
@@ -897,7 +928,9 @@ async function finishPolygon(labelname?: string) {
     labelname,
     pts: [...drawingPoints.value],
   })
-  try { await store.save(true, false) } catch { /* silent */ }
+  try { await store.save(true, false) } catch (e: any) {
+    lastSaveError.value = e.message || '自动保存失败'
+  }
 
   drawingPoints.value = []
   isDrawing.value = false
@@ -1008,7 +1041,7 @@ function insertPointOnEdge(entryIdx: number, edgeIdx: number, mousePt: { x: numb
 }
 
 // Approximate label width in image coords (7px per char + 8px tag padding)
-function labelWidthPx(entry: { labelname: string; label: number }): number {
+function labelWidthPx(entry: { labelname: string; label: number; pts?: Array<{ x: number; y: number }> }): number {
   const text = entry.labelname || `${entry.label}`
   return (text.length * 7 + 8) / scale.value
 }
@@ -1020,7 +1053,7 @@ function startEditLabel(origIdx: number) {
   openLabelDialog('添加标注', entry.labelname || `${entry.label}`, async (name) => {
     if (name && name.trim()) {
       entry.labelname = name.trim()
-      try { await store.save(true, false) } catch { /* silent */ }
+      try { await store.save(true, false) } catch (e: any) { lastSaveError.value = e.message || '自动保存失败' }
     }
   })
 }
@@ -1044,13 +1077,13 @@ async function deleteEntry(origIdx: number) {
   if (!store.annotationData?.va || !store.annotationData.va[origIdx]) return
   store.annotationData.va.splice(origIdx, 1)
   ElMessage.success('已删除标注')
-  try { await store.save(true, false) } catch { /* silent */ }
+  try { await store.save(true, false) } catch (e: any) { lastSaveError.value = e.message || '自动保存失败' }
 }
 
 async function deleteAnnotation() {
   if (!store.annotationData) return
   store.annotationData.va = []
-  try { await store.save(true, false) } catch { /* silent */ }
+  try { await store.save(true, false) } catch (e: any) { lastSaveError.value = e.message || '自动保存失败' }
 }
 
 // Reset: restore snapshot to annotation, then persist to server
@@ -1063,7 +1096,8 @@ async function resetAnnotation() {
   // Restore snapshot (初始态，给撤销用)
   if (store.initialSnapshot) {
     store.annotationData = JSON.parse(JSON.stringify(store.initialSnapshot))
-    try { await store.save(true, false) } catch { /* silent */ }
+    store.savedSnapshot = JSON.parse(JSON.stringify(store.initialSnapshot)) // sync savedSnapshot to avoid stale hasChanges
+    try { await store.save(true, false) } catch (e: any) { lastSaveError.value = e.message || '自动保存失败' }
     ElMessage.success('已撤销修改')
   } else {
     await store.loadAnnotation(store.currentImage)
@@ -1094,6 +1128,7 @@ async function saveAnnotation() {
   startLoading('save')
   try {
     await store.save(false, false)
+    lastSaveError.value = ''
   } catch (e: any) {
     ElMessage.error(e.message || '保存失败')
   } finally {
@@ -1169,6 +1204,7 @@ function setMode(m: 'draw' | 'select') {
 
 
 // Watch for image change — serial load: clear → load image → load annotation
+let _loadGen = 0
 watch(
   () => store.currentImage,
   async (newImg, oldImg) => {
@@ -1188,7 +1224,10 @@ watch(
     // 2. Clear canvas, load new image
     imageReady.value = false
     bgImage.value = null
+    _loadGen++
+    const gen = _loadGen
     await loadImage()
+    if (gen !== _loadGen) return // discard stale load
 
     // 3. Load new annotation (image is ready, dims are set)
     if (newImg) {
@@ -1196,6 +1235,11 @@ watch(
     }
   },
 )
+
+// Track dirty state for hasChanges (avoids JSON.stringify on every render)
+watch(() => store.annotationData, () => {
+  if (store.annotationData) store.hasChanges = true
+}, { deep: true })
 
 function handleKeyDown(e: KeyboardEvent) {
   if (e.key === 'Shift') shiftKey.value = true
@@ -1268,6 +1312,18 @@ onUnmounted(() => {
   height: 100%;
 }
 
+.save-error-banner {
+  background: #fef0f0;
+  color: #f56c6c;
+  text-align: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px solid #fbc4c4;
+}
+.save-error-banner:hover {
+  background: #fde2e2;
+}
 
 .annotate-body {
   display: flex;
