@@ -78,7 +78,7 @@
                   />
                   <v-text
                     :config="{
-                      text: entry.labelname || `${entry.label}`,
+                      text: getLabelWithArea(entry),
                       fontSize: 12 / scale,
                       fontFamily: 'sans-serif',
                       fill: '#fff',
@@ -185,7 +185,24 @@ function toPathLinePoints(pts: Array<{ x: number; y: number }>): number[] {
   return all.flatMap(p => [p.x, p.y])
 }
 
-function labelWidthPx(entry: { labelname: string; label: number }): number {
+function polygonArea(pts: Array<{ x: number; y: number }>): number {
+  let area = 0
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length
+    area += pts[i].x * pts[j].y
+    area -= pts[j].x * pts[i].y
+  }
+  return Math.abs(area / 2)
+}
+
+function getLabelWithArea(entry: { labelname: string; label: number; pts: Array<{ x: number; y: number }> }): string {
+  const label = entry.labelname || `${entry.label}`
+  if (!entry.pts || entry.pts.length < 3) return label
+  const area = polygonArea(entry.pts)
+  return `${label} | ${area.toFixed(1)}`
+}
+
+function labelWidthPx(entry: { labelname: string; label: number; pts?: Array<{ x: number; y: number }> }): number {
   const text = entry.labelname || `${entry.label}`
   return (text.length * 7 + 8) / scale.value
 }
