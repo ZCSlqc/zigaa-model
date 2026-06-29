@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { ArrowRight, ArrowDown, Folder, Picture, Delete, Download } from '@element-plus/icons-vue'
 import type { TreeNode, TreeFolder, TreeFile } from '../../stores/annotation'
 import { useAnnotationStore } from '../../stores/annotation'

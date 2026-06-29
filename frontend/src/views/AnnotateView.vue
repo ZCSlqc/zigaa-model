@@ -47,7 +47,7 @@
                 :type="currentCategory === opt.value ? 'primary' : ''"
                 size="small"
                 :class="{ active: currentCategory === opt.value }"
-                @click="setCategory(opt.value)"
+                @click="setCategory(opt.value as 'none' | 'undone' | 'pending')"
               >{{ opt.label }}</el-button>
             </span>
           </div>
@@ -130,8 +130,8 @@
                 <v-label
                   v-if="showLabels"
                   :config="{
-                    x: entry.pts[0].x - labelWidthPx(entry) / 2,
-                    y: entry.pts[0].y - 24 / scale,
+                    x: findTopPt(entry.pts).x - labelWidthPx(entry) / 2,
+                    y: findTopPt(entry.pts).y - 24 / scale,
                     rotation: 0,
                     listening: false,
                   }"
@@ -160,8 +160,8 @@
                 <v-circle
                   v-if="mode === 'select'"
                   :config="{
-                    x: entry.pts[0].x,
-                    y: entry.pts[0].y + 8 / scale,
+                    x: findTopPt(entry.pts).x,
+                    y: findTopPt(entry.pts).y + 8 / scale,
                     radius: ANNOTATION_DELETE_BTN_RADIUS / scale,
                     fill: isDeleteHovered(idx) ? 'rgba(245, 108, 108, 1)' : 'rgba(245, 108, 108, 0.75)',
                     stroke: '#fff',
@@ -246,14 +246,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '../components/Layout/AppLayout.vue'
 import Toolbar from '../components/Annotation/Toolbar.vue'
 import ImagePanel from '../components/Annotation/ImagePanel.vue'
 import { useAnnotationStore } from '../stores/annotation'
-import { downloadImage as apiDownloadImage } from '../api/resource'
-import client from '../api/client'
 import { base64ToBlob } from '../utils/blob'
 
 const route = useRoute()
@@ -270,7 +268,7 @@ const categoryOptions = [
 
 const currentCategory = computed(() => store.currentImage?.category ?? 'none')
 
-async function setCategory(category: string) {
+async function setCategory(category: 'none' | 'undone' | 'pending') {
   if (!store.currentImage) return
   const oldPath = store.currentImage.rel_path
   await store.updateImageMsg(oldPath, category)
@@ -327,7 +325,7 @@ const showEdges = ref(true)
 
 // Loading states with 500ms delay
 let loadingTimer: ReturnType<typeof setTimeout> | null = null
-let loadingTarget: 'save' | 'reset' | 'delete-image' | null = null
+let loadingTarget: 'save' | 'reset' | 'delete-image' | 'download-image' | null = null
 const loadingSave = ref(false)
 const loadingReset = ref(false)
 const loadingDeleteImage = ref(false)
@@ -559,6 +557,14 @@ function getPointColor(idx: number): string {
   return '#409eff'
 }
 
+function findTopPt(pts: Array<{ x: number; y: number }>): { x: number; y: number } {
+  let top = pts[0]
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].y < top.y) top = pts[i]
+  }
+  return top
+}
+
 function getPointRadius(idx: number): number {
   if (hoveredPointIdx.value === idx) return ANNOTATION_VERTEX_HOVER_RADIUS / scale.value
   return ANNOTATION_VERTEX_RADIUS / scale.value
@@ -650,10 +656,10 @@ function handleStageMouseDown(e: any) {
       return
     }
 
-    // Check delete button click (below first good point)
+    // Check delete button click (below top point)
     for (const entry of [...currentEntries.value]) {
       if (!entry.pts.length) continue
-      const fp = entry.pts[0]
+      const fp = findTopPt(entry.pts)
       const dly = fp.y + 8 / scale.value
       const dbx = fp.x
       const dx = pt.x - dbx
@@ -664,11 +670,11 @@ function handleStageMouseDown(e: any) {
       }
     }
 
-    // Check label click (label centered on first good point, above)
+    // Check label click (label centered on top point, above)
     if (showLabels.value) {
       for (const entry of [...currentEntries.value]) {
         if (!entry.pts.length) continue
-        const fp = entry.pts[0]
+        const fp = findTopPt(entry.pts)
         const ly = fp.y - 24 / scale.value
         const halfW = labelWidthPx(entry) / 2 + 4 / scale.value
         if (Math.abs(pt.x - fp.x) < halfW && pt.y >= ly - 2 / scale.value && pt.y <= ly + 14 / scale.value) {
@@ -793,9 +799,9 @@ function handleStageMouseMove(e: any) {
       for (let idx = 0; idx < currentEntries.value.length; idx++) {
         const entry = currentEntries.value[idx]
         if (!entry.pts.length) continue
-        const fp = entry.pts[0]
+        const fp = findTopPt(entry.pts)
 
-        // Delete button hover (below first point)
+        // Delete button hover (below top point)
         const dly = fp.y + 8 / scale.value
         const dbx = fp.x
         const ddx = pt.x - dbx
@@ -806,7 +812,7 @@ function handleStageMouseMove(e: any) {
           break // delete button takes priority
         }
 
-        // Label hover (centered on first point, above)
+        // Label hover (centered on top point, above)
         const ly = fp.y - 24 / scale.value
         const halfW = labelWidthPx(entry) / 2 + 4 / scale.value
         if (Math.abs(pt.x - fp.x) < halfW && pt.y >= ly - 2 / scale.value && pt.y <= ly + 14 / scale.value) {
@@ -844,6 +850,8 @@ function handleStageMouseMove(e: any) {
       // Update cursor based on hover state
       if (foundDelete || foundLabel || foundVertexOrEdge) {
         stageNode.container()?.style.setProperty('cursor', 'pointer')
+      } else {
+        stageNode.container()?.style.setProperty('cursor', 'crosshair')
       }
     }
   }
@@ -1201,7 +1209,7 @@ function setMode(m: 'draw' | 'select') {
 // Watch for image change — serial load: clear → load image → load annotation
 watch(
   () => store.currentImage,
-  async (newImg, oldImg) => {
+  async (newImg) => {
     // 1. Clear all state
     drawingPoints.value = []
     isDrawing.value = false

@@ -63,8 +63,8 @@
                 <v-label
                   v-if="showLabels"
                   :config="{
-                    x: entry.pts[0].x - labelWidthPx(entry) / 2,
-                    y: entry.pts[0].y - 24 / scale,
+                    x: findTopPt(entry.pts).x - labelWidthPx(entry) / 2,
+                    y: findTopPt(entry.pts).y - 24 / scale,
                     rotation: 0,
                     listening: false,
                   }"
@@ -110,7 +110,6 @@ import AppLayout from '../components/Layout/AppLayout.vue'
 import PreviewToolbar from '../components/Annotation/PreviewToolbar.vue'
 import ImagePanel from '../components/Annotation/ImagePanel.vue'
 import { useAnnotationStore } from '../stores/annotation'
-import client from '../api/client'
 import { base64ToBlob } from '../utils/blob'
 
 const route = useRoute()
@@ -180,6 +179,14 @@ function toPathData(pts: Array<{ x: number; y: number }>): string {
   }
   d += ' Z'
   return d
+}
+
+function findTopPt(pts: Array<{ x: number; y: number }>): { x: number; y: number } {
+  let top = pts[0]
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].y < top.y) top = pts[i]
+  }
+  return top
 }
 
 function toPathLinePoints(pts: Array<{ x: number; y: number }>): number[] {

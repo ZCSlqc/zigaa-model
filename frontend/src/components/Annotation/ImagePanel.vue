@@ -149,7 +149,7 @@ function showCategoryMenu(data: { node: MouseEvent; path: string }) {
 }
 function hideCategoryMenu() { categoryMenuVisible.value = false }
 
-async function setCategory(category: string | undefined) {
+async function setCategory(category: 'none' | 'undone' | 'pending' | undefined) {
   const cat = category === undefined ? 'none' : category
   await store.updateImageMsg(categoryMenuPath.value, cat)
   hideCategoryMenu()
@@ -236,8 +236,7 @@ async function startDownloadFolder(folderPath: string) {
   } catch { return }
 
   const arrangeName = extractRelPath(folderPath)
-  const resourceType = store.resourceType.value || (route.query.type as string)
-  const modelId = store.modelId.value || (route.params.modelId as string)
+  const modelId = store.modelId || (route.params.modelId as string)
   if (!modelId) {
     ElMessage.error('请先选择模型')
     return

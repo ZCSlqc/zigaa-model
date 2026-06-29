@@ -456,12 +456,12 @@ const paramLoaded = ref(false);
 const testLoaded = ref(false);
 const testPassed = ref(0);
 const testFailed = ref(0);
-const testErrors = ref<any[]>([]);
+const testErrors = ref<Set<string>>(new Set());
 
 const templateLoaded = ref(false);
 const templatePassed = ref(0);
 const templateFailed = ref(0);
-const templateErrors = ref<any[]>([]);
+const templateErrors = ref<Set<string>>(new Set());
 
 // 上传状态
 const uploading = ref<"good" | "defect" | "test" | "template" | null>(null);
@@ -645,11 +645,11 @@ async function fetchModel() {
     testLoaded.value = false;
     testPassed.value = 0;
     testFailed.value = 0;
-    testErrors.value = {};
+    testErrors.value = new Set();
     templateLoaded.value = false;
     templatePassed.value = 0;
     templateFailed.value = 0;
-    templateErrors.value = {};
+    templateErrors.value = new Set<string>();
 
     // 填充
     const good = pkgs.find((p: any) => p.resource_type === "good");

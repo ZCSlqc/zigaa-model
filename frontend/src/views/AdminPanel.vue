@@ -163,7 +163,7 @@ import {
 
 const activeTab = ref('users')
 const loading = ref(false)
-const { loadingAction, startLoading, stopLoading, isLoading } = useSingleLoading()
+const { startLoading, stopLoading, isLoading } = useSingleLoading()
 const users = ref<any[]>([])
 const allProjects = ref<any[]>([])
 

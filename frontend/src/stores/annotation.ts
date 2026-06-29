@@ -110,8 +110,8 @@ export const useAnnotationStore = defineStore('annotation', () => {
 
   function filterTreeByCategory(nodes: TreeNode[], category: string): TreeNode[] {
     return nodes.flatMap(node => {
-      if (isFolder(node)) {
-        const filteredChildren = filterTreeByCategory(node.children, category)
+      if ((node as TreeFolder).children) {
+        const filteredChildren = filterTreeByCategory((node as TreeFolder).children, category)
         return filteredChildren.length > 0 ? [{ ...node, children: filteredChildren }] : []
       }
       return (node as TreeFile).category === category ? [node] : []
@@ -123,15 +123,32 @@ export const useAnnotationStore = defineStore('annotation', () => {
     if (!filter) return sourceTree.value
     return sourceTree.value.map(folder => ({
       ...folder,
-      children: filterTreeByCategory(folder.children, filter),
-    })).filter((f: TreeNode) => f.children.length > 0) as TreeFolder[]
+      children: filterTreeByCategory((folder as TreeFolder).children, filter),
+    })).filter((f: any) => f.children.length > 0) as TreeFolder[]
   })
 
   // displayTree 变化时自动 build flatFiles + 清空缓存
   watch(displayTree, (newTree) => {
-    if (!newTree || newTree.length === 0) return
+    // 即使 tree 为空也要清空 flatFiles（防止筛选后旧数据残留）
+    if (!newTree || newTree.length === 0) {
+      flatFiles.value = []
+      thumbCache.value.clear()
+      return
+    }
     buildFlatFilesFromTree(newTree)
     thumbCache.value.clear()
+    // 如果当前有选中图片，且它在 flatFiles 中，立即刷新它的缩略图缓存
+    const ci = currentImage.value
+    if (ci) {
+      const idx = flatFiles.value.findIndex(f => f.path === ci.path)
+      if (idx >= 0) {
+        const start = Math.max(0, idx - 100)
+        const end = Math.min(flatFiles.value.length, idx + 101)
+        for (let i = start; i < end; i++) {
+          thumbCache.value.add(flatFiles.value[i].path)
+        }
+      }
+    }
   }, { immediate: true })
 
   // ── Auto-save ──
@@ -236,7 +253,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
 
       const buildTree = (nodes: TreeNode[]): TreeNode[] => {
         return nodes.map(node => {
-          if (node.children) {
+          if (isFolder(node)) {
             return {
               name: node.name,
               path: node.path || '',
@@ -253,12 +270,12 @@ export const useAnnotationStore = defineStore('annotation', () => {
           const category: 'none' | 'undone' | 'pending' = msgEntry?.category && msgEntry.category !== '' ? msgEntry.category as 'none' | 'undone' | 'pending' : 'none'
 
           return {
-            name: node.name, size: node.size, path: node.path,
+            name: node.name, size: (node as any).size, path: node.path,
             has_annotation: backendError === undefined,
             rel_path: relPath,
-            compress_path: node.compress_path, preview_path: node.preview_path,
-            width: msgEntry?.width ?? node.width,
-            height: msgEntry?.height ?? node.height,
+            compress_path: (node as any).compress_path, preview_path: (node as any).preview_path,
+            width: msgEntry?.width ?? (node as any).width,
+            height: msgEntry?.height ?? (node as any).height,
             channels: msgEntry?.channels,
             error: backendError?.message, error_level: backendError?.level ?? 0,
             category,
@@ -313,7 +330,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
       annotationData.value = null
       // 3. Switch image — component's watch handles image + annotation loading
       currentImage.value = img
-      // 4. Refresh thumbnail cache: clear old, load ±100 neighbors
+      // 4. Refresh thumbnail cache: always reload ±100 neighbors (flatFiles may have changed)
       refreshThumbCache(img.path)
     } finally {
       _pendingSwitch = false
