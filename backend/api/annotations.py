@@ -32,12 +32,17 @@ LAYERS = ("compress", "preview")
 # ── 工具函数 ─────────────────────────────────────────────
 
 
-def _validate_path(path: str, name: str = "path") -> None:
-    """Reject path traversal and absolute paths."""
+def _validate_path(path: str, name: str = "path", base_dir: str = "") -> None:
+    """Reject path traversal and absolute paths, including symlink escapes."""
     if not path:
         return
     if ".." in path or path.startswith("/"):
         raise HTTPException(status_code=400, detail=f"Invalid {name}")
+    if base_dir:
+        resolved = os.path.realpath(os.path.join(base_dir, path))
+        real_base = os.path.realpath(base_dir)
+        if not resolved.startswith(real_base + os.sep) and resolved != real_base:
+            raise HTTPException(status_code=400, detail=f"Invalid {name}")
 
 
 def _get_test_dir(model_id: str, db: Session) -> str | None:
@@ -165,11 +170,11 @@ def _cleanup_and_update_ledger(model_id: str, resource_type: str, resource_dir: 
 def download_image(model_id: str, resource_type: str, image_path: str,
                    db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """Download image + annotation JSON as base64 blobs in one response."""
-    _validate_path(image_path, "image_path")
     import base64
     from fastapi.responses import Response
     check_model_owner(model_id, user["user_id"], db)
     resource_dir = get_resource_dir(model_id, resource_type)
+    _validate_path(image_path, "image_path", resource_dir)
     orig_path = os.path.join(resource_dir, "original", image_path)
     if not os.path.isfile(orig_path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -191,8 +196,9 @@ def download_image(model_id: str, resource_type: str, image_path: str,
 def get_annotation(model_id: str, resource_type: str, image_path: str,
                    db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """获取单图标注，不存在返回空 va[] 模板"""
-    _validate_path(image_path, "image_path")
     check_model_owner(model_id, user["user_id"], db)
+    resource_dir = get_resource_dir(model_id, resource_type)
+    _validate_path(image_path, "image_path", resource_dir)
 
     ann_path = _get_annotation_path(model_id, resource_type, image_path, db)
     if os.path.exists(ann_path):
@@ -215,10 +221,9 @@ def get_annotation(model_id: str, resource_type: str, image_path: str,
 def save_annotation(model_id: str, resource_type: str, image_path: str, data: dict,
                     db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """保存单图标注"""
-    _validate_path(image_path, "image_path")
     check_model_owner(model_id, user["user_id"], db)
-
     resource_dir = get_resource_dir(model_id, resource_type)
+    _validate_path(image_path, "image_path", resource_dir)
     ann_path = _get_annotation_path(model_id, resource_type, image_path, db)
 
     # 静默清理坏点
@@ -258,10 +263,9 @@ def save_annotation(model_id: str, resource_type: str, image_path: str, data: di
 def delete_folder(model_id: str, resource_type: str, folder_path: str,
                   db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """删除文件夹及其下所有内容，同步清理台账"""
-    _validate_path(folder_path, "folder_path")
     check_model_owner(model_id, user["user_id"], db)
-
     resource_dir = get_resource_dir(model_id, resource_type)
+    _validate_path(folder_path, "folder_path", resource_dir)
     orig_base = os.path.join(resource_dir, "original")
 
     orig_folder = os.path.join(orig_base, folder_path)
@@ -296,10 +300,9 @@ def delete_folder(model_id: str, resource_type: str, folder_path: str,
 def delete_image(model_id: str, resource_type: str, image_path: str,
                  db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """删除图片：原图 + compress/preview 图 + 标注 JSON"""
-    _validate_path(image_path, "image_path")
     check_model_owner(model_id, user["user_id"], db)
-
     resource_dir = get_resource_dir(model_id, resource_type)
+    _validate_path(image_path, "image_path", resource_dir)
     orig_base = os.path.join(resource_dir, "original")
     orig_path = os.path.join(orig_base, image_path)
 
@@ -329,8 +332,9 @@ def delete_image(model_id: str, resource_type: str, image_path: str,
 def update_image_msg_api(model_id: str, resource_type: str, image_path: str, data: dict,
                          db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """更新单张图片的 msgs 元信息（category 等）"""
-    _validate_path(image_path, "image_path")
     check_model_owner(model_id, user["user_id"], db)
+    resource_dir = get_resource_dir(model_id, resource_type)
+    _validate_path(image_path, "image_path", resource_dir)
 
     valid_keys = {"category"}
     update_data = {k: v for k, v in data.items() if k in valid_keys}
