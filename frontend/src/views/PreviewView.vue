@@ -30,7 +30,7 @@
             @mousemove="onMouseMove"
             @mouseup="onMouseUp"
           >
-            <v-layer>
+            <v-layer :config="{ imageSmoothingEnabled: false }">
               <v-image
                 :config="{ image: bgImage, x: 0, y: 0, width: imgW, height: imgH }"
               />
