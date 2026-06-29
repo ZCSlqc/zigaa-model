@@ -180,7 +180,7 @@
 </template>
 
 <script setup lang="ts">
-import { ElMessageBox, ElMessage } from "element-plus";
+import { ElMessageBox } from "element-plus";
 import { ArrowLeft } from "@element-plus/icons-vue";
 
 const props = defineProps<{
@@ -227,7 +227,6 @@ async function confirmDeleteAll() {
       },
     );
     emit("deleteAll");
-    ElMessage.success("已清空所有标注");
   } catch {
     // cancelled
   }
@@ -385,14 +384,6 @@ async function confirmDeleteImage() {
 
 .btn-reset {
   color: #409eff !important;
-  &:disabled {
-    opacity: 0.5 !important;
-    pointer-events: none !important;
-  }
-}
-
-.btn-reprocess {
-  color: #e6a23c !important;
   &:disabled {
     opacity: 0.5 !important;
     pointer-events: none !important;

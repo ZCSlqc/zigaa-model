@@ -234,7 +234,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
 
       const rawChildren = ((treeRes.data.tree.children ?? []).find((c: any) => c.name === 'original')?.children) ?? []
 
-      const buildTree = (nodes: any[]): TreeNode[] => {
+      const buildTree = (nodes: TreeNode[]): TreeNode[] => {
         return nodes.map(node => {
           if (node.children) {
             return {
@@ -375,40 +375,15 @@ export const useAnnotationStore = defineStore('annotation', () => {
 
   // ── Category update ──
 
-  // Remove non-matching files from displayTree when category changes (filter mode only)
-  // displayTree nodes are same refs as sourceTree — splice only changes the view array
-  function updateDisplayTreeAfterCategoryChange(filePath: string, newCategory: 'none' | 'undone' | 'pending') {
-    const filter = categoryFilter.value
-    if (!filter) return  // "全部"模式 — displayTree = sourceTree，自动反映
-    if (newCategory === filter) return  // 改成了当前筛选值，不需要移除
-
-    // splice out from displayTree's children (folder is original ref, sourceTree already updated)
-    for (const folder of displayTree.value) {
-      const idx = folder.children.findIndex(
-        (n: TreeNode) => !isFolder(n) && (n as TreeFile).rel_path === filePath,
-      )
-      if (idx >= 0) {
-        folder.children.splice(idx, 1)
-        if (folder.children.length === 0) {
-          _emptyFolders.push(folder.path)
-        }
-        break
-      }
-    }
-  }
-
-  const _emptyFolders: string[] = []
-  function getEmptyFolders(): string[] { const e = _emptyFolders.slice(); _emptyFolders.length = 0; return e }
-
   async function updateImageMsgFn(path: string, category: 'none' | 'undone' | 'pending') {
     try {
       await updateImageMsg(modelId.value, resourceType.value, path, { category })
       const found = findNode(path)
       if (found) {
         found.category = category
-        updateDisplayTreeAfterCategoryChange(path, category)
-        // Don't reassign currentImage — let the
-        // caller (setCategory / ImagePanel) handle clearing or switching.
+        // displayTree is a computed that re-filters from sourceTree —
+        // no manual splice needed; changing found.category automatically
+        // updates the computed on next evaluation.
       }
     } catch (e: any) {
       ElMessage.error(e.response?.data?.detail || '更新标记失败')
@@ -536,14 +511,12 @@ export const useAnnotationStore = defineStore('annotation', () => {
     deleteCurrentImage, deleteFolder: deleteFolderFn,
     getCompressPathByImage, getPreviewPathByImage, getOriginalPathByImage, channelLabel,
     getFilteredImages, prevImage, nextImage,
-    getEmptyFolders,
     onFolderRemoved, categoryFilter,
     updateImageMsg: updateImageMsgFn,
     clearAutoSaveTimers,
     scheduleAutoSave,
     setMode,
     labelHistory, addLabelToHistory, removeLabelFromHistory,
-    deleteFolder: deleteFolderFn,
     // Thumbnail cache
     thumbsIncludePath,
   }

@@ -1,4 +1,5 @@
 import client, { LONG_TIMEOUT } from './client'
+import type { AnnotationData } from '../stores/annotation'
 
 // 磁盘空间检查
 export function checkDiskSpace(modelId: string, type: 'good' | 'defect' | 'test' | 'template') {
@@ -34,7 +35,7 @@ export function uploadComplete(modelId: string, resourceType: 'good' | 'defect' 
   })
 }
 
-export function getUploadStatus(modelId: string, resourceType: string, uploadId: string) {
+export function getUploadStatus(modelId: string, resourceType: 'good' | 'defect' | 'test' | 'template', uploadId: string) {
   return client.get(`/resources/${modelId}/${resourceType}/upload-status/${uploadId}`)
 }
 
@@ -52,7 +53,7 @@ export function getParameter(modelId: string) {
   return client.get(`/resources/${modelId}/parameter`)
 }
 
-export function editParameter(modelId: string, data: any) {
+export function editParameter(modelId: string, data: Record<string, unknown>) {
   return client.put(`/resources/${modelId}/parameter`, data)
 }
 
@@ -100,24 +101,24 @@ export function getImageInfo(modelId: string, resourceType: string, path: string
 
 // 单图标注
 export function getAnnotation(modelId: string, resourceType: string, imagePath: string) {
-  return client.get(`/annotations/${modelId}/${resourceType}/${imagePath}`)
+  return client.get(`/annotations/${modelId}/${resourceType}/${encodeURIComponent(imagePath)}`)
 }
 
-export function saveAnnotation(modelId: string, resourceType: string, imagePath: string, data: any) {
-  return client.put(`/annotations/${modelId}/${resourceType}/${imagePath}`, data)
+export function saveAnnotation(modelId: string, resourceType: string, imagePath: string, data: AnnotationData) {
+  return client.put(`/annotations/${modelId}/${resourceType}/${encodeURIComponent(imagePath)}`, data)
 }
 
 export function deleteImage(modelId: string, resourceType: string, imagePath: string) {
-  return client.delete(`/annotations/${modelId}/${resourceType}/${imagePath}`)
+  return client.delete(`/annotations/${modelId}/${resourceType}/${encodeURIComponent(imagePath)}`)
 }
 
 export function deleteFolder(modelId: string, resourceType: string, folderPath: string) {
-  return client.delete(`/annotations/${modelId}/${resourceType}/folder/${folderPath}`)
+  return client.delete(`/annotations/${modelId}/${resourceType}/folder/${encodeURIComponent(folderPath)}`)
 }
 
 // 更新图片 msgs（category 等）
 export function updateImageMsg(modelId: string, resourceType: string, imagePath: string, data: { category: string }) {
-  return client.patch(`/annotations/${modelId}/${resourceType}/msg/${imagePath}`, data)
+  return client.patch(`/annotations/${modelId}/${resourceType}/msg/${encodeURIComponent(imagePath)}`, data)
 }
 
 // 重新入库

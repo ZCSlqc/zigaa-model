@@ -47,7 +47,7 @@
     <div v-if="isFolder && expanded" class="tree-children">
       <TreeItem
         v-for="child in folderNode!.children"
-        :key="child.name"
+        :key="child.path"
         :node="child"
         :expanded-folders="expandedFolders"
         :selected-path="selectedPath"

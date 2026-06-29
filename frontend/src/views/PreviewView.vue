@@ -111,6 +111,7 @@ import PreviewToolbar from '../components/Annotation/PreviewToolbar.vue'
 import ImagePanel from '../components/Annotation/ImagePanel.vue'
 import { useAnnotationStore } from '../stores/annotation'
 import client from '../api/client'
+import { base64ToBlob } from '../utils/blob'
 
 const route = useRoute()
 const router = useRouter()
@@ -137,6 +138,7 @@ const isPanning = ref(false)
 const lastPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
 
 // Loading
+let _loadGen = 0
 let loadingTimer: ReturnType<typeof setTimeout> | null = null
 const loadingDeleteImage = ref(false)
 const loadingDownloadImage = ref(false)
@@ -310,15 +312,8 @@ async function downloadImage() {
     if (!res.ok) throw new Error('下载失败')
     const data = await res.json()
 
-    function b64ToBlob(b64: string, mime: string) {
-      const bin = window.atob(b64)
-      const arr = new Uint8Array(bin.length)
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
-      return new Blob([arr], { type: mime })
-    }
-
     // 下载图片
-    const imgBlob = b64ToBlob(data.image, 'image/*')
+    const imgBlob = base64ToBlob(data.image, 'image/*')
     const imgBlobUrl = URL.createObjectURL(imgBlob)
     const a1 = document.createElement('a')
     a1.href = imgBlobUrl
@@ -328,7 +323,7 @@ async function downloadImage() {
 
     // 下载标注 JSON（如果有）
     if (data.annotation) {
-      const jsonBlob = b64ToBlob(data.annotation, 'application/json')
+      const jsonBlob = base64ToBlob(data.annotation, 'application/json')
       const jsonBlobUrl = URL.createObjectURL(jsonBlob)
       const a2 = document.createElement('a')
       a2.href = jsonBlobUrl

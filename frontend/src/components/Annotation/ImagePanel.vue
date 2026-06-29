@@ -64,8 +64,8 @@
     <BatchDownloadDialog
       ref="batchDownloadRef"
       v-model:visible="folderDownloadVisible"
-      :model-id="store.modelId.value || (route.params.modelId as string)"
-      :resource-type="store.resourceType.value || (route.query.type as string) || 'defect'"
+      :model-id="store.modelId || (route.params.modelId as string)"
+      :resource-type="store.resourceType || (route.query.type as string)"
       :arrange-names="folderDownloadArrangement ? [folderDownloadArrangement] : []"
       :download-api="folderDownloadApi"
       :auto-start="true"
@@ -236,7 +236,7 @@ async function startDownloadFolder(folderPath: string) {
   } catch { return }
 
   const arrangeName = extractRelPath(folderPath)
-  const resourceType = store.resourceType.value || (route.query.type as string) || 'defect'
+  const resourceType = store.resourceType.value || (route.query.type as string)
   const modelId = store.modelId.value || (route.params.modelId as string)
   if (!modelId) {
     ElMessage.error('请先选择模型')

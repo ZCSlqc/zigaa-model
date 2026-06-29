@@ -248,13 +248,13 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import AppLayout from '../components/Layout/AppLayout.vue'
 import Toolbar from '../components/Annotation/Toolbar.vue'
 import ImagePanel from '../components/Annotation/ImagePanel.vue'
 import { useAnnotationStore } from '../stores/annotation'
 import { downloadImage as apiDownloadImage } from '../api/resource'
 import client from '../api/client'
+import { base64ToBlob } from '../utils/blob'
 
 const route = useRoute()
 const router = useRouter()
@@ -309,6 +309,7 @@ let globalScale = 1
 let globalPanX = 0
 let globalPanY = 0
 let firstLoad = true
+let _loadGen = 0
 const lastSaveError = ref('')
 
 // Image
@@ -650,7 +651,7 @@ function handleStageMouseDown(e: any) {
     }
 
     // Check delete button click (below first good point)
-    for (const entry of currentEntries.value) {
+    for (const entry of [...currentEntries.value]) {
       if (!entry.pts.length) continue
       const fp = entry.pts[0]
       const dly = fp.y + 8 / scale.value
@@ -665,7 +666,7 @@ function handleStageMouseDown(e: any) {
 
     // Check label click (label centered on first good point, above)
     if (showLabels.value) {
-      for (const entry of currentEntries.value) {
+      for (const entry of [...currentEntries.value]) {
         if (!entry.pts.length) continue
         const fp = entry.pts[0]
         const ly = fp.y - 24 / scale.value
@@ -1041,7 +1042,7 @@ function insertPointOnEdge(entryIdx: number, edgeIdx: number, mousePt: { x: numb
 }
 
 // Approximate label width in image coords (7px per char + 8px tag padding)
-function labelWidthPx(entry: { labelname: string; label: number; pts?: Array<{ x: number; y: number }> }): number {
+function labelWidthPx(entry: { labelname: string; label: number }): number {
   const text = entry.labelname || `${entry.label}`
   return (text.length * 7 + 8) / scale.value
 }
@@ -1097,6 +1098,7 @@ async function resetAnnotation() {
   if (store.initialSnapshot) {
     store.annotationData = JSON.parse(JSON.stringify(store.initialSnapshot))
     store.savedSnapshot = JSON.parse(JSON.stringify(store.initialSnapshot)) // sync savedSnapshot to avoid stale hasChanges
+    store.hasChanges = false
     try { await store.save(true, false) } catch (e: any) { lastSaveError.value = e.message || '自动保存失败' }
     ElMessage.success('已撤销修改')
   } else {
@@ -1140,13 +1142,6 @@ async function deleteImage() {
   startLoading('delete-image')
   await store.deleteCurrentImage()
   stopLoading()
-}
-
-function base64ToBlob(b64: string, mime: string) {
-  const bin = window.atob(b64)
-  const arr = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
-  return new Blob([arr], { type: mime })
 }
 
 async function downloadImage() {
@@ -1204,7 +1199,6 @@ function setMode(m: 'draw' | 'select') {
 
 
 // Watch for image change — serial load: clear → load image → load annotation
-let _loadGen = 0
 watch(
   () => store.currentImage,
   async (newImg, oldImg) => {
