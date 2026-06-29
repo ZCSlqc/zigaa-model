@@ -28,7 +28,7 @@ npm run build    # vue-tsc → vite build
 ## 标注系统核心原则
 
 - 数据格式 `va[]`，坐标在**原始图片像素空间**
-- Konva 画布 `v-stage` 以原图尺寸渲染，缩放通过 `scale` 控制
+- Konva 画布 `v-stage` 以原图尺寸渲染，缩放通过 `scale` 控制，`v-layer` 配置 `imageSmoothingEnabled: false`（nearest neighbor 插值，放大更清晰）
 - HIT_RADIUS = 4px 屏幕像素，检测半径 `4 / scale`
 - 边宽度 `ANNOTATION_EDGE_WIDTH / scale`，顶点半径 `ANNOTATION_VERTEX_RADIUS / scale`（hover `ANNOTATION_VERTEX_HOVER_RADIUS / scale`），边hover `ANNOTATION_EDGE_HOVER_WIDTH / scale`，删除按钮 `ANNOTATION_DELETE_BTN_RADIUS / scale` — 5个参数均在 .env 配置
 - 两种模式: `draw`(crosshair) / `select`(default)；移除 pan 模式，平移由鼠标拖拽实现
@@ -42,11 +42,16 @@ npm run build    # vue-tsc → vite build
 - 文件夹下载: ImagePanel/TreeItem 支持点击下载文件夹，弹出确认 → 进度弹窗，复用 useDownloadManager
 - 路径工具: `utils/path.ts` 提供 `extractRelPath()`，从 URL 路径提取 rel_path（去除 `/original/` 前缀），全代码库统一使用
 - 分类筛选: 面板右侧下拉筛选（全部/未标完/待确认），displayTree 实时过滤，计数联动更新
-- canvas-title 区域: 图片信息（路径/通道/分辨率）+ 分类按钮（默认/未标完/待确认），互斥点击修改当前图片分类
+- canvas-title 区域: 图片信息（路径/通道/分辨率/缩放百分比 `Math.round(scale * 100)%`）+ 分类按钮（默认/未标完/待确认），互斥点击修改当前图片分类
 - 图片外绘制: canvas 内图片外的点自动 clamp 到 `[0, imgW]×[0, imgH]` 边界
 - 键盘左右切换限制在筛选树内，支持循环
 - 路径规范: `path` = URL 路径（显示），`rel_path` = 相对于 original/ 的相对路径（标注操作/删除/文件夹）
 - `category` 始终有值（`none`/`undone`/`pending`），TreeFile 不再用 `original_rel_path`
+- **缩略图懒加载**: `displayTree` → `flatFiles`（递归扁平化），`thumbCache: Set<string>` 路径白名单，切换图片时 `refreshThumbCache()` 加载 ±100 邻居缩略图，不在白名单的 TreeItem 纯文本不请求
+- **展开保护**: `allImages.length > 5000` 时全部展开按钮灰色 + 弹窗警告，删除/筛选/切换资源类型后重新可用
+- **标签格式**: `getLabelWithArea(entry)` 返回 `labelname | 面积.toFixed(1)`（如 `裂纹 | 12345.0`），面积用 Shoelace 公式计算，<3 点不显示面积
+- **标注图片**: 图片/标注 JSON 共用后端 `/download` 接口（base64 编码），PreviewView 也支持下载图片按钮
+- **图片渲染层**: 预览层优先（`getPreviewPathByImage`），原图层（`getOriginalPathByImage`）因 TIFF 浏览器不支持已回退
 
 ## 三态保存系统
 

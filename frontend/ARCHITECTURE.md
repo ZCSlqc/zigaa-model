@@ -271,7 +271,7 @@
 - **显示标签/隐藏标签**：控制多边形标签的显示/隐藏
 - **显示轮廓/隐藏轮廓**（橙色按钮）：控制多边形填充和边的显示/隐藏（顶点、删除按钮、标签不受影响）
 - test/template 资源 → PreviewView 只读渲染（右键平移 + 滚轮缩放）
-- **画布标题栏**：canvas 顶部显示 `图片路径：xxx | 通道数：N（灰度/彩色） | 分辨率：W×H`。通道数来自 msgs 元信息，由后端 `image-info` 端点按需返回
+- **画布标题栏**：canvas 顶部显示 `图片路径：xxx | 通道数：N（灰度/彩色） | 分辨率：W×H | 缩放：XX%`。通道数来自 msgs 元信息，由后端 `image-info` 端点按需返回
 
 ### 测试预览流程
 
@@ -309,7 +309,7 @@
 - 无需迁移操作，直接读 `upload_path/test/`
 - **画布标题栏**：同 AnnotateView，显示图片路径、通道数、分辨率
 - **ImagePanel**：共享组件，test/template 下显示为"测试图片"/"模板图片"
-- **标注渲染**：只读显示 va[]（填充+边+标签），无 hover 交互、无顶点拖拽
+- **标注渲染**：只读显示 va[]（填充+边+标签），无 hover 交互、无顶点拖拽；标签格式 `labelname | 面积.toFixed(1)`（如 `裂纹 | 12345.0`），面积用 Shoelace 公式计算
 
 ### 日志查看
 
@@ -387,7 +387,7 @@
 存入 va[].pts
 ```
 
-- 画布以**原图尺寸**渲染（`v-stage` 的 `width/height` = 原图宽高）
+- 画布以**原图尺寸**渲染（`v-stage` 的 `width/height` = 原图宽高），`v-layer` 配置 `imageSmoothingEnabled: false` 使用 nearest neighbor 插值，放大更清晰
 - 缩放通过 `scaleX/scaleY` 实现，不改变数据坐标
 - 所有交互点检测都用**图片像素空间**，阈值按 `scale` 缩放
 
@@ -412,9 +412,25 @@ mouseDown (draw 模式)
                   └── 远离首点 → 保持绘制状态，下次点击继续加点
 ```
 
+### 标注树缩略图懒加载
+
+- `displayTree` → `flatFiles`（`buildFlatFilesFromTree` 递归扁平化）
+- `thumbCache: Set<string>` 路径白名单，存储允许显示缩略图的文件路径
+- 切换图片时调用 `refreshThumbCache(selectedPath)`：
+  - 已在缓存中 → 跳过（避免重复请求）
+  - 不在缓存中 → 清空 → 从 `flatFiles` 中找 ±100 邻居 → 批量请求缩略图
+  - `TreeItem` 通过 `thumbsIncludePath(path)` 判断是否渲染缩略图，否则纯文本
+- 删除/筛选/切换资源类型时清空 `flatFiles` 和 `thumbCache`
+
+### 展开保护
+
+- `allImages.length > 5000` 时全部展开按钮灰色（`cursor: not-allowed`）+ `ElMessage.warning`
+- 删除图片、切换资源类型、筛选后按钮恢复可用
+- 仅 `AnnotateView` 的 `ImagePanel.vue` 有此逻辑
+
 ### 标注图片下载
 
-AnnotateView 和 PreviewView 工具栏均有「下载图片」按钮（绿色），点击后同时下载图片和标注 JSON。
+AnnotateView 和 PreviewView 工具栏均有「下载图片」按钮（绿色，白字无图标），点击后通过后端 `/annotations/{model_id}/{resource_type}/{image_path:path}/download` 接口获取 base64 编码的图片 + 标注 JSON。
 
 ```
 用户                    AnnotateView/PreviewView              后端
@@ -430,9 +446,15 @@ AnnotateView 和 PreviewView 工具栏均有「下载图片」按钮（绿色）
  │                            └── 浏览器保存两个文件
 ```
 
-- 后端 `/annotations/{model_id}/{resource_type}/{image_path:path}/download`：返回 base64 编码的图片 + 标注（无标注则为 null）
+- 后端 `/annotations/{model_id}/{resource_type}/{image_path:path}/download`：返回 `{"image": base64, "annotation": base64|null}` 纯 JSON
 - 前端用 `fetch` 获取 JSON，`atob` 解码 base64 → `Uint8Array` → `Blob`
-- 分别触发两次 `<a>.click()` 保存图片和 JSON
+- 分别触发两次 `<a>.click()` 保存图片和 JSON（无标注则只下图片）
+- **注意**：不用 axios（会拦截响应类型），改用原生 `fetch()` 获取纯 JSON
+
+### 图片渲染层策略
+
+- 标注/预览均优先使用 `getPreviewPathByImage()`（预览层，Web 友好格式）
+- 原图层 `getOriginalPathByImage()` 曾尝试用于 TIFF 直显，但 `createImageBitmap` 不支持 TIFF → 已回退到预览层
 
 **数据格式**（`va[]`）：
 
