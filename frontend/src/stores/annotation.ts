@@ -73,18 +73,13 @@ export const useAnnotationStore = defineStore('annotation', () => {
     flatFiles.value = flat
   }
 
-  // 点击新图片时：path 已在缓存则跳过；否则清缓存，取前后 100 邻居
+  // 取前后 100 邻居加入缩略图缓存
   function refreshThumbCache(selectedPath: string) {
     if (thumbCache.value.has(selectedPath)) return
-
     const idx = flatFiles.value.findIndex(f => f.path === selectedPath)
     if (idx === -1) return
-
     thumbCache.value.clear()
-
-    const start = Math.max(0, idx - 100)
-    const end = Math.min(flatFiles.value.length, idx + 101)
-    for (let i = start; i < end; i++) {
+    for (let i = Math.max(0, idx - 100); i < Math.min(flatFiles.value.length, idx + 101); i++) {
       thumbCache.value.add(flatFiles.value[i].path)
     }
   }
@@ -129,7 +124,6 @@ export const useAnnotationStore = defineStore('annotation', () => {
 
   // displayTree 变化时自动 build flatFiles + 清空缓存
   watch(displayTree, (newTree) => {
-    // 即使 tree 为空也要清空 flatFiles（防止筛选后旧数据残留）
     if (!newTree || newTree.length === 0) {
       flatFiles.value = []
       thumbCache.value.clear()
@@ -137,18 +131,9 @@ export const useAnnotationStore = defineStore('annotation', () => {
     }
     buildFlatFilesFromTree(newTree)
     thumbCache.value.clear()
-    // 如果当前有选中图片，且它在 flatFiles 中，立即刷新它的缩略图缓存
+    // 筛选后当前图缩略图自动加载（避免再点一次才加载）
     const ci = currentImage.value
-    if (ci) {
-      const idx = flatFiles.value.findIndex(f => f.path === ci.path)
-      if (idx >= 0) {
-        const start = Math.max(0, idx - 100)
-        const end = Math.min(flatFiles.value.length, idx + 101)
-        for (let i = start; i < end; i++) {
-          thumbCache.value.add(flatFiles.value[i].path)
-        }
-      }
-    }
+    if (ci) refreshThumbCache(ci.path)
   }, { immediate: true })
 
   // ── Auto-save ──
@@ -508,10 +493,6 @@ export const useAnnotationStore = defineStore('annotation', () => {
     return img.compress_path || `/uploads/${modelId.value}/${resourceType.value}/compress/${img.rel_path}`
   }
 
-  function getOriginalPathByImage(img: TreeFile): string {
-    return `/uploads/${modelId.value}/${resourceType.value}/original/${img.rel_path}`
-  }
-
   function getPreviewPathByImage(img: TreeFile): string {
     return img.preview_path || `/uploads/${modelId.value}/${resourceType.value}/preview/${img.rel_path}`
   }
@@ -526,7 +507,7 @@ export const useAnnotationStore = defineStore('annotation', () => {
     loading, annotationLoading, allImages,
     loadModel, switchResourceType, selectImage, loadAnnotation, save,
     deleteCurrentImage, deleteFolder: deleteFolderFn,
-    getCompressPathByImage, getPreviewPathByImage, getOriginalPathByImage, channelLabel,
+    getCompressPathByImage, getPreviewPathByImage, channelLabel,
     getFilteredImages, prevImage, nextImage,
     onFolderRemoved, categoryFilter,
     updateImageMsg: updateImageMsgFn,

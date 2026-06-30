@@ -382,49 +382,4 @@ onUnmounted(() => { offFolderRemoved() })
 }
 
 /* Folder download dialog */
-.folder-download-dialog {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-}
-
-.download-progress {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-
-.progress-info {
-  display: flex;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.info-item {
-  white-space: nowrap;
-}
-
-.progress-size {
-  font-size: 12px;
-  color: var(--text-regular);
-}
-
-.download-error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 0;
-}
-
-.error-text {
-  margin: 0;
-  color: var(--color-danger);
-  font-size: 14px;
-}
 </style>

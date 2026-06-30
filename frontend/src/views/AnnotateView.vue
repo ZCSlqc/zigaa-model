@@ -222,7 +222,7 @@
       </div>
 
       <!-- 标签编辑弹窗 -->
-      <el-dialog v-model="showLabelDialog" :title="labelDialogTitle" width="450px" @open="onLabelDialogOpen" @close="onLabelDialogClose">
+      <el-dialog v-model="showLabelDialog" :title="labelDialogTitle" width="450px" @close="onLabelDialogClose">
         <div class="label-dialog-input-row">
           <span class="label-dialog-text">新建标注</span>
           <el-input v-model="labelDialogInput" placeholder="输入标签名称" @keyup.enter="confirmLabelDialog" />
@@ -390,10 +390,6 @@ function openLabelDialog(title: string, defaultName: string, callback: (name: st
   // 展示当前标注已有的标签名，再展示历史
   labelDialogInput.value = store.labelHistory.length > 0 ? store.labelHistory[0] : (defaultName || 'label_1')
   showLabelDialog.value = true
-}
-
-function onLabelDialogOpen() {
-  // no-op
 }
 
 function onLabelDialogClose() {
